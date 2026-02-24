@@ -290,6 +290,23 @@
             box-shadow: 0 0 5px var(--accent-orange);
         }
 
+
+
+        .delay-visual {
+            background: radial-gradient(circle at 25% 15%, #04122e 0%, #020814 60%, #01040c 100%);
+            border: 1px solid #2a3d6d;
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 12px;
+            box-shadow: inset 0 0 16px rgba(20, 60, 140, 0.25);
+        }
+
+        .delay-visual svg {
+            width: 100%;
+            height: 76px;
+            display: block;
+        }
+
         .footer {
             background: #111;
             padding: 15px 20px;
@@ -623,38 +640,52 @@
                 </div>
             </div>
 
-            <!-- Module 4: Dynamics -->
+            <!-- Module 4: Delay -->
             <div class="module">
                 <div class="module-header">
-                    <span>Dynamics</span>
+                    <span>Delay</span>
                     <span class="led on"></span>
+                </div>
+                <div class="delay-visual" aria-hidden="true">
+                    <svg viewBox="0 0 160 76" role="img" aria-label="Delay feedback visualization">
+                        <line x1="0" y1="38" x2="160" y2="38" stroke="#2a4a7d" stroke-width="1" />
+                        <polygon points="10,5 10,71 128,38" fill="rgba(137, 116, 255, 0.38)" />
+                        <polyline points="10,38 42,38 58,38 74,38 92,38 112,38 128,38" fill="none" stroke="#8b6cff" stroke-width="2" />
+                        <line x1="18" y1="12" x2="18" y2="38" stroke="#af96ff" stroke-width="2" />
+                        <line x1="30" y1="38" x2="30" y2="61" stroke="#957cff" stroke-width="2" />
+                        <line x1="44" y1="29" x2="44" y2="38" stroke="#9f88ff" stroke-width="2" />
+                        <line x1="62" y1="38" x2="62" y2="58" stroke="#8f76ff" stroke-width="2" />
+                        <line x1="80" y1="33" x2="80" y2="38" stroke="#8870ff" stroke-width="2" />
+                        <line x1="98" y1="38" x2="98" y2="50" stroke="#7f67ff" stroke-width="1.6" />
+                        <line x1="116" y1="36" x2="116" y2="38" stroke="#7861ff" stroke-width="1.6" />
+                    </svg>
                 </div>
                 <div class="controls-grid">
                     <div class="control-group">
-                        <div class="knob-container" data-param="Thresh" data-min="0" data-max="100" data-value="0">
-                            <div class="knob" style="transform: rotate(-135deg);"></div>
+                        <div class="knob-container" data-param="Time" data-min="1" data-max="1200" data-value="317">
+                            <div class="knob" style="transform: rotate(5deg);"></div>
                         </div>
-                        <div class="knob-label">Thresh</div>
-                        <div class="knob-value">-inf</div>
+                        <div class="knob-label">Time</div>
+                        <div class="knob-value">317ms</div>
                     </div>
                     <div class="control-group">
-                        <div class="knob-container" data-param="Ratio" data-min="1" data-max="20" data-value="4">
-                            <div class="knob" style="transform: rotate(-90deg);"></div>
+                        <div class="knob-container" data-param="Feedback" data-min="0" data-max="100" data-value="45">
+                            <div class="knob" style="transform: rotate(72deg);"></div>
                         </div>
-                        <div class="knob-label">Ratio</div>
-                        <div class="knob-value">4:1</div>
+                        <div class="knob-label">Feedback</div>
+                        <div class="knob-value">45%</div>
                     </div>
                     <div class="control-group">
-                        <div class="knob-container" data-param="Gain" data-min="0" data-max="24" data-value="9">
-                            <div class="knob" style="transform: rotate(45deg);"></div>
+                        <div class="knob-container" data-param="Mix" data-min="0" data-max="100" data-value="30">
+                            <div class="knob" style="transform: rotate(18deg);"></div>
                         </div>
-                        <div class="knob-label">Makeup</div>
-                        <div class="knob-value">+9dB</div>
+                        <div class="knob-label">Mix</div>
+                        <div class="knob-value">30%</div>
                     </div>
                 </div>
                 <div class="btn-row">
-                    <button class="btn btn-danger active">Comp</button>
-                    <button class="btn">Limiter</button>
+                    <button class="btn active">Stereo</button>
+                    <button class="btn btn-blue active">Ping-Pong</button>
                 </div>
             </div>
         </div>
@@ -754,6 +785,7 @@
                 if (p === 'master') return String(Math.round(value));
                 if (p === 'ratio') return `${Math.round(value)}:1`;
                 if (p === 'gain' || p === 'makeup') return `+${Math.round(value)}dB`;
+                if (p === 'time') return `${Math.round(value)}ms`;
 
                 // Threshold in this UI is 0..100; map to -inf / -60..0dB for display.
                 if (p === 'thresh' || p === 'threshold') {
