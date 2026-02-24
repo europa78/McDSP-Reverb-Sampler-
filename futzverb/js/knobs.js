@@ -29,6 +29,8 @@ function formatKnobValue(param, value, min, max) {
     return `${db.toFixed(0)}dB`;
   }
 
+  if (p.includes('delay time')) return `${Math.round(value)}ms`;
+  if (p.includes('delay feedback') || p.includes('delay mix')) return `${Math.round(value)}%`;
   if (p.includes('cut')) return `${Math.round(value)}%`;
   if (min === 0 && max === 100) return `${Math.round(value)}%`;
   return String(Math.round(value * 100) / 100);
