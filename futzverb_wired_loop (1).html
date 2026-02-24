@@ -1180,6 +1180,13 @@
                 toneFilter.type = 'lowpass';
                 const distLevel = audioContext.createGain();
 
+                // Delay stage
+                const delayNode = audioContext.createDelay(1.5);
+                const delayFeedback = audioContext.createGain();
+                const delayDry = audioContext.createGain();
+                const delayWetToDry = audioContext.createGain();
+                const delayToReverb = audioContext.createGain();
+
                 // Reverb stage (with predelay + optional modulation)
                 const preDelay = audioContext.createDelay(0.2); // up to 200ms
                 const modDelay = audioContext.createDelay(0.05); // subtle modulation
@@ -1216,17 +1223,26 @@
                 const masterGain = audioContext.createGain();
 
                 // Wire it up:
-                // input -> drive -> shaper -> tone -> level -> split dry + wet
+                // input -> drive -> shaper -> tone -> level -> delay split
                 input.connect(driveGain);
                 driveGain.connect(shaper);
                 shaper.connect(toneFilter);
                 toneFilter.connect(distLevel);
 
-                // dry path
-                distLevel.connect(dryGain);
+                // Delay loop and routing
+                distLevel.connect(delayDry);
+                distLevel.connect(delayNode);
+                delayNode.connect(delayFeedback);
+                delayFeedback.connect(delayNode);
+                delayNode.connect(delayWetToDry);
+                delayNode.connect(delayToReverb);
 
-                // wet path: predelay -> modDelay -> convolver -> EQ -> wetGain
-                distLevel.connect(preDelay);
+                // dry path (post delay mix)
+                delayDry.connect(dryGain);
+                delayWetToDry.connect(dryGain);
+
+                // wet path: delay send -> predelay -> modDelay -> convolver -> EQ -> wetGain
+                delayToReverb.connect(preDelay);
                 preDelay.connect(modDelay);
                 modDelay.connect(convolver);
                 convolver.connect(lowCut);
@@ -1248,6 +1264,7 @@
                     output: masterGain,
                     nodes: {
                         driveGain, shaper, toneFilter, distLevel,
+                        delayNode, delayFeedback, delayDry, delayWetToDry, delayToReverb,
                         preDelay, modDelay, modDepth, lfo, lfoGain,
                         convolver, lowCut, highCut,
                         dryGain, wetGain,
@@ -1371,6 +1388,28 @@
                         const norm = clamp(v / 100, 0, 1);
                         // 0..1.6
                         n.distLevel.gain.setTargetAtTime(norm * 1.6, t, 0.01);
+                        break;
+                    }
+
+                    // --- Delay ---
+                    case 'Time': {
+                        const norm = clamp((v - 1) / 1199, 0, 1);
+                        // 1..1200ms
+                        const delaySeconds = 0.001 + norm * 1.199;
+                        n.delayNode.delayTime.setTargetAtTime(delaySeconds, t, 0.02);
+                        break;
+                    }
+                    case 'Feedback': {
+                        const norm = clamp(v / 100, 0, 1);
+                        // Keep below runaway oscillation
+                        n.delayFeedback.gain.setTargetAtTime(norm * 0.92, t, 0.02);
+                        break;
+                    }
+                    case 'Mix': {
+                        const norm = clamp(v / 100, 0, 1);
+                        // Blend delayed signal into dry path and reverb send
+                        n.delayWetToDry.gain.setTargetAtTime(norm * 0.9, t, 0.02);
+                        n.delayToReverb.gain.setTargetAtTime(0.35 + norm * 0.65, t, 0.02);
                         break;
                     }
 
