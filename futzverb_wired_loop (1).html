@@ -84,7 +84,7 @@
 
         .workspace {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(5, 1fr);
             gap: 1px;
             background-color: var(--panel-border);
             flex-grow: 1;
@@ -96,6 +96,23 @@
             display: flex;
             flex-direction: column;
             position: relative;
+        }
+
+        .delay-visual {
+            width: 100%;
+            height: 100px;
+            border: 1px solid #2f3240;
+            border-radius: 8px;
+            background: radial-gradient(circle at 20% 20%, rgba(80, 110, 200, 0.14), rgba(8, 10, 18, 0.95));
+            margin-bottom: 12px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        #delayMorphCanvas {
+            width: 100%;
+            height: 100%;
+            display: block;
         }
 
         .module-header {
@@ -461,7 +478,7 @@
         }
 
         @media (max-width: 800px) {
-            .workspace { grid-template-columns: 1fr 1fr; }
+            .workspace { grid-template-columns: 1fr 1fr 1fr; }
             .display-area { grid-column: span 2; }
             .footer { flex-direction: column; align-items: stretch; }
             .master-knob-wrapper { justify-content: center; }
@@ -623,7 +640,45 @@
                 </div>
             </div>
 
-            <!-- Module 4: Dynamics -->
+            <!-- Module 4: Delay -->
+            <div class="module">
+                <div class="module-header">
+                    <span>Delay</span>
+                    <span class="led on"></span>
+                </div>
+                <div class="delay-visual">
+                    <canvas id="delayMorphCanvas"></canvas>
+                </div>
+                <div class="controls-grid">
+                    <div class="control-group">
+                        <div class="knob-container" data-param="Delay Time" data-min="0" data-max="100" data-value="35">
+                            <div class="knob" style="transform: rotate(-9deg);"></div>
+                        </div>
+                        <div class="knob-label">Time</div>
+                        <div class="knob-value">315ms</div>
+                    </div>
+                    <div class="control-group">
+                        <div class="knob-container" data-param="Feedback" data-min="0" data-max="100" data-value="45">
+                            <div class="knob" style="transform: rotate(27deg);"></div>
+                        </div>
+                        <div class="knob-label">Feedback</div>
+                        <div class="knob-value">45%</div>
+                    </div>
+                    <div class="control-group">
+                        <div class="knob-container" data-param="Delay Mix" data-min="0" data-max="100" data-value="30">
+                            <div class="knob" style="transform: rotate(-27deg);"></div>
+                        </div>
+                        <div class="knob-label">Mix</div>
+                        <div class="knob-value">30%</div>
+                    </div>
+                </div>
+                <div class="btn-row">
+                    <button class="btn active">Stereo</button>
+                    <button class="btn btn-blue active">Ping-Pong</button>
+                </div>
+            </div>
+
+            <!-- Module 5: Dynamics -->
             <div class="module">
                 <div class="module-header">
                     <span>Dynamics</span>
@@ -726,6 +781,8 @@
             const playBtn = document.getElementById('playBtn');
             const stopBtn = document.getElementById('stopBtn');
             const loopBtn = document.getElementById('loopBtn');
+            const delayMorphCanvas = document.getElementById('delayMorphCanvas');
+            const delayMorphCtx = delayMorphCanvas ? delayMorphCanvas.getContext('2d') : null;
 
             // --- 0. Knob Interaction (UI) ---
             // The HTML defines knobs via .knob-container + data-min/data-max/data-value,
@@ -754,6 +811,10 @@
                 if (p === 'master') return String(Math.round(value));
                 if (p === 'ratio') return `${Math.round(value)}:1`;
                 if (p === 'gain' || p === 'makeup') return `+${Math.round(value)}dB`;
+                if (p === 'delay time') {
+                    const ms = 30 + clamp(value / 100, 0, 1) * 820;
+                    return `${Math.round(ms)}ms`;
+                }
 
                 // Threshold in this UI is 0..100; map to -inf / -60..0dB for display.
                 if (p === 'thresh' || p === 'threshold') {
@@ -810,6 +871,7 @@
                 if (!c.hasAttribute('tabindex')) c.setAttribute('tabindex', '0');
                 setKnobUI(c, toNumber(c.dataset.value, 0));
             });
+            drawDelayMorph();
 
             // Drag state (one knob at a time)
             let activeKnob = null;
@@ -897,6 +959,74 @@
                 }
             }
 
+
+            function drawDelayMorph() {
+                if (!delayMorphCanvas || !delayMorphCtx) return;
+                const rect = delayMorphCanvas.getBoundingClientRect();
+                if (!rect.width || !rect.height) return;
+
+                const dpr = window.devicePixelRatio || 1;
+                const w = Math.floor(rect.width * dpr);
+                const h = Math.floor(rect.height * dpr);
+                if (delayMorphCanvas.width !== w || delayMorphCanvas.height !== h) {
+                    delayMorphCanvas.width = w;
+                    delayMorphCanvas.height = h;
+                }
+
+                const c = delayMorphCtx;
+                c.setTransform(dpr, 0, 0, dpr, 0, 0);
+                const vw = rect.width;
+                const vh = rect.height;
+
+                const timeNorm = clamp(toNumber(knobState['Delay Time'] ?? 35, 35) / 100, 0, 1);
+                const feedbackNorm = clamp(toNumber(knobState['Feedback'] ?? 45, 45) / 100, 0, 1);
+                const mixNorm = clamp(toNumber(knobState['Delay Mix'] ?? 30, 30) / 100, 0, 1);
+
+                c.clearRect(0, 0, vw, vh);
+                const bg = c.createLinearGradient(0, 0, vw, vh);
+                bg.addColorStop(0, 'rgba(18,24,38,0.95)');
+                bg.addColorStop(1, 'rgba(6,10,16,0.95)');
+                c.fillStyle = bg;
+                c.fillRect(0, 0, vw, vh);
+
+                const centerY = vh / 2;
+                const spread = (0.18 + mixNorm * 0.55) * vh;
+                const tailX = vw * (0.62 + timeNorm * 0.30);
+
+                c.beginPath();
+                c.moveTo(20, centerY - spread);
+                c.quadraticCurveTo(vw * 0.35, centerY - spread * (0.25 + feedbackNorm), tailX, centerY);
+                c.quadraticCurveTo(vw * 0.35, centerY + spread * (0.25 + feedbackNorm), 20, centerY + spread);
+                c.closePath();
+                const cone = c.createLinearGradient(20, 0, tailX, 0);
+                cone.addColorStop(0, `rgba(152, 124, 255, ${0.30 + mixNorm * 0.35})`);
+                cone.addColorStop(1, 'rgba(152, 124, 255, 0.03)');
+                c.fillStyle = cone;
+                c.fill();
+
+                c.strokeStyle = `rgba(137, 168, 255, ${0.30 + mixNorm * 0.4})`;
+                c.lineWidth = 1.2;
+                c.beginPath();
+                c.moveTo(12, centerY);
+                c.lineTo(vw - 8, centerY + (feedbackNorm - 0.5) * 4);
+                c.stroke();
+
+                const spikes = 6 + Math.round(feedbackNorm * 8);
+                for (let i = 0; i < spikes; i++) {
+                    const t = i / Math.max(1, spikes - 1);
+                    const x = 12 + t * (vw * (0.70 + timeNorm * 0.2));
+                    const amp = (1 - t) * spread * (0.45 + feedbackNorm * 0.8);
+                    const polarity = i % 2 === 0 ? -1 : 1;
+                    c.strokeStyle = `rgba(180, 150, 255, ${0.35 + (1 - t) * 0.45})`;
+                    c.lineWidth = 1.2 + (1 - t) * 1.4;
+                    c.beginPath();
+                    c.moveTo(x, centerY);
+                    c.lineTo(x, centerY + amp * polarity);
+                    c.stroke();
+                }
+            }
+
+            window.addEventListener('resize', drawDelayMorph);
             // Bind events
             knobContainers.forEach((c) => {
                 c.addEventListener('pointerdown', onKnobPointerDown);
@@ -961,6 +1091,13 @@
                 const dryGain = audioContext.createGain();
                 const wetGain = audioContext.createGain();
 
+                // Delay stage
+                const delayNode = audioContext.createDelay(1.5);
+                const delayFeedback = audioContext.createGain();
+                const delayTone = audioContext.createBiquadFilter();
+                delayTone.type = 'lowpass';
+                const delayWetGain = audioContext.createGain();
+
                 // Dynamics + output
                 const compressor = audioContext.createDynamicsCompressor();
                 compressor.knee.value = 24;
@@ -993,6 +1130,14 @@
                 dryGain.connect(sum);
                 wetGain.connect(sum);
 
+                // delay path: dist -> delay -> tone -> delay wet
+                distLevel.connect(delayNode);
+                delayNode.connect(delayTone);
+                delayTone.connect(delayWetGain);
+                delayWetGain.connect(sum);
+                delayNode.connect(delayFeedback);
+                delayFeedback.connect(delayNode);
+
                 sum.connect(compressor);
                 compressor.connect(makeupGain);
                 makeupGain.connect(masterGain);
@@ -1006,6 +1151,7 @@
                         preDelay, modDelay, modDepth, lfo, lfoGain,
                         convolver, lowCut, highCut,
                         dryGain, wetGain,
+                        delayNode, delayFeedback, delayTone, delayWetGain,
                         compressor, makeupGain, masterGain,
                         sum
                     }
@@ -1182,6 +1328,24 @@
                         break;
                     }
 
+                    // --- Delay ---
+                    case 'Delay Time': {
+                        const norm = clamp(v / 100, 0, 1);
+                        n.delayNode.delayTime.setTargetAtTime(0.03 + norm * 0.82, t, 0.02);
+                        break;
+                    }
+                    case 'Feedback': {
+                        const norm = clamp(v / 100, 0, 1);
+                        n.delayFeedback.gain.setTargetAtTime(0.05 + norm * 0.82, t, 0.02);
+                        n.delayTone.frequency.setTargetAtTime(1500 + (1 - norm) * 6500, t, 0.03);
+                        break;
+                    }
+                    case 'Delay Mix': {
+                        const norm = clamp(v / 100, 0, 1);
+                        n.delayWetGain.gain.setTargetAtTime(norm * 0.9, t, 0.02);
+                        break;
+                    }
+
                     // --- Dynamics ---
                     case 'Thresh': {
                         // knob 0..100 => -60..0 dB
@@ -1214,6 +1378,10 @@
             function handleKnobChange(param, value) {
                 if (!param) return;
                 knobState[param] = toNumber(value, 0);
+
+                if (param === 'Delay Time' || param === 'Feedback' || param === 'Delay Mix') {
+                    drawDelayMorph();
+                }
 
                 // If audio is ready, apply immediately
                 if (!audioContext) return;
