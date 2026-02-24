@@ -1,6 +1,7 @@
 // audio.js — WebAudio engine + FX graph
 // Routes: input -> driveGain -> waveshaper -> toneFilter -> distLevel -> (dry + wet)
-// wet: preDelay -> modDelay -> convolver -> lowCut -> highCut -> wetGain
+// wet reverb: preDelay -> modDelay -> convolver -> lowCut -> highCut -> reverbWetGain
+// wet delay: delayInputGain -> delayTimeNode (+feedback loop) -> delayWetGain
 // sum -> compressor -> makeup -> master -> destination
 
 import { clamp, toNumber, dbToGain } from './utils.js';
@@ -124,7 +125,7 @@ export function createAudioEngine() {
         // Wet/dry derived from size (bigger room => more wet)
         const wet = clamp(0.10 + norm * 0.75, 0.10, 0.90);
         const dry = clamp(1.0 - wet * 0.65, 0.15, 1.0);
-        n.wetGain.gain.setTargetAtTime(wet, t, 0.02);
+        n.reverbWetGain.gain.setTargetAtTime(wet, t, 0.02);
         n.dryGain.gain.setTargetAtTime(dry, t, 0.02);
 
         scheduleReverbRegen();
@@ -157,6 +158,24 @@ export function createAudioEngine() {
         const fc = 16000 * Math.pow(0.0625, 1 - norm); // ~1000..16000
         n.highCut.frequency.setTargetAtTime(fc, t, 0.02);
         n.highCut.Q.setTargetAtTime(0.7, t, 0.02);
+        break;
+      }
+
+      // --- Delay ---
+      case 'Delay Time': {
+        const ms = clamp(v, 20, 1200);
+        n.delayTimeNode.delayTime.setTargetAtTime(ms / 1000, t, 0.02);
+        break;
+      }
+      case 'Delay Feedback': {
+        const fb = clamp(v / 100, 0, 0.9);
+        n.delayFeedbackGain.gain.setTargetAtTime(fb, t, 0.02);
+        break;
+      }
+      case 'Delay Mix': {
+        const norm = clamp(v / 100, 0, 1);
+        n.delayWetGain.gain.setTargetAtTime(norm * 0.85, t, 0.02);
+        n.delayInputGain.gain.setTargetAtTime(0.25 + norm * 0.55, t, 0.02);
         break;
       }
 
@@ -229,7 +248,16 @@ export function createAudioEngine() {
 
     // Wet/Dry mix (derived from Size knob)
     const dryGain = audioContext.createGain();
-    const wetGain = audioContext.createGain();
+    const reverbWetGain = audioContext.createGain();
+
+    // Delay stage
+    const delayInputGain = audioContext.createGain();
+    const delayTimeNode = audioContext.createDelay(1.4);
+    const delayFeedbackGain = audioContext.createGain();
+    const delayFilter = audioContext.createBiquadFilter();
+    delayFilter.type = 'lowpass';
+    delayFilter.frequency.value = 5200;
+    const delayWetGain = audioContext.createGain();
 
     // Dynamics + output
     const compressor = audioContext.createDynamicsCompressor();
@@ -253,11 +281,19 @@ export function createAudioEngine() {
     modDelay.connect(convolver);
     convolver.connect(lowCut);
     lowCut.connect(highCut);
-    highCut.connect(wetGain);
+    highCut.connect(reverbWetGain);
+
+    distLevel.connect(delayInputGain);
+    delayInputGain.connect(delayTimeNode);
+    delayTimeNode.connect(delayFilter);
+    delayFilter.connect(delayWetGain);
+    delayFilter.connect(delayFeedbackGain);
+    delayFeedbackGain.connect(delayTimeNode);
 
     const sum = audioContext.createGain();
     dryGain.connect(sum);
-    wetGain.connect(sum);
+    reverbWetGain.connect(sum);
+    delayWetGain.connect(sum);
 
     sum.connect(compressor);
     compressor.connect(makeupGain);
@@ -271,7 +307,8 @@ export function createAudioEngine() {
         driveGain, shaper, toneFilter, distLevel,
         preDelay, modDelay, modDepth, lfo, lfoGain,
         convolver, lowCut, highCut,
-        dryGain, wetGain,
+        dryGain, reverbWetGain,
+        delayInputGain, delayTimeNode, delayFeedbackGain, delayFilter, delayWetGain,
         compressor, makeupGain, masterGain,
         sum
       }

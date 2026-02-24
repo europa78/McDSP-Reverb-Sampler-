@@ -155,7 +155,57 @@
                 </div>
             </div>
 
-            <!-- Module 4: Dynamics -->
+            <!-- Module 4: Delay -->
+            <div class="module">
+                <div class="module-header">
+                    <span>Delay</span>
+                    <span class="led on"></span>
+                </div>
+
+                <div class="delay-morph-display" id="delayMorphDisplay" aria-label="Delay response visualization">
+                    <div class="delay-tail"></div>
+                    <div class="delay-bars">
+                        <span class="delay-bar" style="--i: 0;"></span>
+                        <span class="delay-bar" style="--i: 1;"></span>
+                        <span class="delay-bar" style="--i: 2;"></span>
+                        <span class="delay-bar" style="--i: 3;"></span>
+                        <span class="delay-bar" style="--i: 4;"></span>
+                        <span class="delay-bar" style="--i: 5;"></span>
+                        <span class="delay-bar" style="--i: 6;"></span>
+                        <span class="delay-bar" style="--i: 7;"></span>
+                    </div>
+                </div>
+
+                <div class="controls-grid">
+                    <div class="control-group">
+                        <div class="knob-container" data-param="Delay Time" data-min="20" data-max="1200" data-value="320">
+                            <div class="knob" style="transform: rotate(-14deg);"></div>
+                        </div>
+                        <div class="knob-label">Time</div>
+                        <div class="knob-value">320ms</div>
+                    </div>
+                    <div class="control-group">
+                        <div class="knob-container" data-param="Delay Feedback" data-min="0" data-max="90" data-value="45">
+                            <div class="knob" style="transform: rotate(45deg);"></div>
+                        </div>
+                        <div class="knob-label">Feedback</div>
+                        <div class="knob-value">45%</div>
+                    </div>
+                    <div class="control-group">
+                        <div class="knob-container" data-param="Delay Mix" data-min="0" data-max="100" data-value="35">
+                            <div class="knob" style="transform: rotate(-9deg);"></div>
+                        </div>
+                        <div class="knob-label">Mix</div>
+                        <div class="knob-value">35%</div>
+                    </div>
+                </div>
+                <div class="btn-row">
+                    <button class="btn btn-blue active">Ping-Pong</button>
+                    <button class="btn">Tape</button>
+                </div>
+            </div>
+
+            <!-- Module 5: Dynamics -->
             <div class="module">
                 <div class="module-header">
                     <span>Dynamics</span>
