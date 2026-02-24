@@ -307,6 +307,107 @@
             display: block;
         }
 
+
+
+        .midi-strip {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #161619;
+            border-top: 1px solid #2a2a2f;
+            border-bottom: 1px solid #0f0f10;
+            padding: 10px 14px;
+            min-height: 78px;
+        }
+
+        .midi-controls {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            min-width: 118px;
+        }
+
+        .midi-oct-btn {
+            width: 24px;
+            height: 24px;
+            border: 1px solid #4a4a4d;
+            border-radius: 4px;
+            background: #232327;
+            color: #bbb;
+            font-family: var(--font-tech);
+            cursor: pointer;
+            line-height: 1;
+            padding: 0;
+        }
+
+        .midi-oct-btn:hover { border-color: #777; color: #fff; }
+        .midi-oct-btn:disabled { opacity: 0.45; cursor: default; }
+
+        .midi-oct-label {
+            font-family: var(--font-tech);
+            font-size: 0.66rem;
+            color: var(--text-muted);
+            min-width: 56px;
+            text-align: center;
+            text-transform: uppercase;
+        }
+
+        .midi-keyboard {
+            position: relative;
+            flex: 1;
+            height: 54px;
+            background: #050505;
+            border: 1px solid #2c2c2f;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .midi-white-keys {
+            height: 100%;
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+        }
+
+        .midi-key {
+            border: 1px solid #333;
+            padding: 0;
+            margin: 0;
+            cursor: pointer;
+            font-family: var(--font-tech);
+        }
+
+        .midi-key.white {
+            background: linear-gradient(180deg, #f7f7f7 0%, #c8c8c8 100%);
+        }
+
+        .midi-key.black {
+            position: absolute;
+            top: 0;
+            width: calc(100% / 12.5);
+            height: 64%;
+            background: linear-gradient(180deg, #37373a 0%, #09090a 100%);
+            border: 1px solid #111;
+            border-radius: 0 0 3px 3px;
+            z-index: 2;
+        }
+
+        .midi-key.active.white {
+            background: linear-gradient(180deg, #8af9b7 0%, #5fbc85 100%);
+        }
+
+        .midi-key.active.black {
+            background: linear-gradient(180deg, #74b6ff 0%, #355c89 100%);
+        }
+
+        .midi-note-readout {
+            min-width: 64px;
+            text-align: right;
+            font-family: var(--font-tech);
+            font-size: 0.68rem;
+            color: var(--accent-orange);
+            text-transform: uppercase;
+        }
+
         .footer {
             background: #111;
             padding: 15px 20px;
@@ -690,6 +791,20 @@
             </div>
         </div>
 
+
+
+        <section class="midi-strip" aria-label="MIDI keyboard pitch control">
+            <div class="midi-controls">
+                <button class="midi-oct-btn" id="octaveDownBtn" type="button" aria-label="Lower octave">−</button>
+                <div class="midi-oct-label" id="octaveLabel">Oct 4</div>
+                <button class="midi-oct-btn" id="octaveUpBtn" type="button" aria-label="Raise octave">+</button>
+            </div>
+            <div class="midi-keyboard" id="midiKeyboard">
+                <div class="midi-white-keys" id="midiWhiteKeys"></div>
+            </div>
+            <div class="midi-note-readout" id="midiNoteReadout">C4</div>
+        </section>
+
         <footer class="footer">
             <div class="sample-browser">
                 <div class="sb-list-container">
@@ -757,6 +872,104 @@
             const playBtn = document.getElementById('playBtn');
             const stopBtn = document.getElementById('stopBtn');
             const loopBtn = document.getElementById('loopBtn');
+            const octaveDownBtn = document.getElementById('octaveDownBtn');
+            const octaveUpBtn = document.getElementById('octaveUpBtn');
+            const octaveLabel = document.getElementById('octaveLabel');
+            const midiWhiteKeys = document.getElementById('midiWhiteKeys');
+            const midiKeyboard = document.getElementById('midiKeyboard');
+            const midiNoteReadout = document.getElementById('midiNoteReadout');
+
+            const OCTAVE_MIN = 2;
+            const OCTAVE_MAX = 6;
+            const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+            const WHITE_NOTES = [0, 2, 4, 5, 7, 9, 11];
+            const BLACK_NOTES = [
+                { semitone: 1, left: 10.8 },
+                { semitone: 3, left: 25.0 },
+                { semitone: 6, left: 53.4 },
+                { semitone: 8, left: 67.6 },
+                { semitone: 10, left: 81.8 }
+            ];
+
+            let keyboardOctave = 4;
+            let currentMidiNote = 60; // C4 default
+
+            const midiToPlaybackRate = (midiNote) => Math.pow(2, (midiNote - 60) / 12);
+
+            function midiToName(midiNote) {
+                const octave = Math.floor(midiNote / 12) - 1;
+                return `${NOTE_NAMES[midiNote % 12]}${octave}`;
+            }
+
+            function updateKeyboardLabels() {
+                octaveLabel.textContent = `Oct ${keyboardOctave}`;
+                octaveDownBtn.disabled = keyboardOctave <= OCTAVE_MIN;
+                octaveUpBtn.disabled = keyboardOctave >= OCTAVE_MAX;
+                midiNoteReadout.textContent = midiToName(currentMidiNote);
+            }
+
+            function highlightActiveKey() {
+                if (!midiKeyboard) return;
+                midiKeyboard.querySelectorAll('.midi-key').forEach((k) => {
+                    const isActive = Number(k.dataset.midi) === currentMidiNote;
+                    k.classList.toggle('active', isActive);
+                });
+            }
+
+            function setCurrentMidiNote(midiNote, retrigger = true) {
+                currentMidiNote = clamp(Math.round(midiNote), (OCTAVE_MIN + 1) * 12, (OCTAVE_MAX + 1) * 12 + 11);
+                updateKeyboardLabels();
+                highlightActiveKey();
+                if (retrigger) playSample();
+            }
+
+            function renderMidiKeyboard() {
+                if (!midiWhiteKeys || !midiKeyboard) return;
+                midiWhiteKeys.innerHTML = '';
+                midiKeyboard.querySelectorAll('.midi-key.black').forEach((k) => k.remove());
+
+                const baseMidi = (keyboardOctave + 1) * 12;
+
+                WHITE_NOTES.forEach((semi) => {
+                    const key = document.createElement('button');
+                    key.type = 'button';
+                    key.className = 'midi-key white';
+                    key.dataset.midi = String(baseMidi + semi);
+                    key.setAttribute('aria-label', midiToName(baseMidi + semi));
+                    key.addEventListener('click', () => setCurrentMidiNote(baseMidi + semi, true));
+                    midiWhiteKeys.appendChild(key);
+                });
+
+                BLACK_NOTES.forEach(({ semitone, left }) => {
+                    const key = document.createElement('button');
+                    key.type = 'button';
+                    key.className = 'midi-key black';
+                    key.dataset.midi = String(baseMidi + semitone);
+                    key.style.left = `${left}%`;
+                    key.setAttribute('aria-label', midiToName(baseMidi + semitone));
+                    key.addEventListener('click', () => setCurrentMidiNote(baseMidi + semitone, true));
+                    midiKeyboard.appendChild(key);
+                });
+
+                highlightActiveKey();
+                updateKeyboardLabels();
+            }
+
+            octaveDownBtn?.addEventListener('click', () => {
+                keyboardOctave = clamp(keyboardOctave - 1, OCTAVE_MIN, OCTAVE_MAX);
+                const semitone = currentMidiNote % 12;
+                renderMidiKeyboard();
+                setCurrentMidiNote((keyboardOctave + 1) * 12 + semitone, false);
+            });
+
+            octaveUpBtn?.addEventListener('click', () => {
+                keyboardOctave = clamp(keyboardOctave + 1, OCTAVE_MIN, OCTAVE_MAX);
+                const semitone = currentMidiNote % 12;
+                renderMidiKeyboard();
+                setCurrentMidiNote((keyboardOctave + 1) * 12 + semitone, false);
+            });
+
+            renderMidiKeyboard();
 
             // --- 0. Knob Interaction (UI) ---
             // The HTML defines knobs via .knob-container + data-min/data-max/data-value,
@@ -1310,6 +1523,7 @@
 
                 sourceNode = audioContext.createBufferSource();
                 sourceNode.buffer = currentBuffer;
+                sourceNode.playbackRate.value = midiToPlaybackRate(currentMidiNote);
                 // Route through FX graph
                 sourceNode.connect(fx.input);
 
