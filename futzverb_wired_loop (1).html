@@ -548,6 +548,28 @@
             text-overflow: ellipsis;
         }
 
+        .midi-controls {
+            display: grid;
+            grid-template-columns: 56px 1fr;
+            gap: 4px 6px;
+            align-items: center;
+            font-family: var(--font-tech);
+            font-size: 0.55rem;
+            color: #8f96a1;
+        }
+
+        .midi-select {
+            width: 100%;
+            background: #121216;
+            color: #d7dde8;
+            border: 1px solid #3f3f45;
+            border-radius: 3px;
+            font-size: 0.56rem;
+            font-family: var(--font-tech);
+            height: 18px;
+            padding: 0 4px;
+        }
+
         .keyboard-rack {
             background: #101013;
             border-top: 1px solid #2b2b31;
@@ -918,10 +940,22 @@
 
             <div class="midi-panel" aria-live="polite">
                 <div class="midi-top-row">
-                    <span class="midi-status" id="midiStatus">MIDI: Not connected</span>
-                    <button class="midi-btn" id="midiBtn">Enable MIDI</button>
+                    <span class="midi-status" id="midiStatus">MIDI: Off</span>
+                    <button class="midi-btn" id="midiBtn">MIDI ON</button>
                 </div>
-                <div class="midi-map" id="midiMapPreview">USB MIDI map ready: CC 20-32, Ch1, plus Note transport.</div>
+                <div class="midi-controls">
+                    <label for="midiInputSelect">INPUT</label>
+                    <select id="midiInputSelect" class="midi-select">
+                        <option value="all">All inputs</option>
+                    </select>
+                    <label for="midiTargetSelect">TARGET</label>
+                    <select id="midiTargetSelect" class="midi-select">
+                        <option value="A">A</option>
+                        <option value="B">B</option>
+                        <option value="OMNI" selected>OMNI (A+B)</option>
+                    </select>
+                </div>
+                <div class="midi-map" id="midiMapPreview">USB MIDI map ready: CC 20-32 · Note On/Off sampler pitch/velocity · CC120/123 panic.</div>
             </div>
         </footer>
     </div>
@@ -939,6 +973,8 @@
             const midiBtn = document.getElementById('midiBtn');
             const midiStatus = document.getElementById('midiStatus');
             const midiMapPreview = document.getElementById('midiMapPreview');
+            const midiInputSelect = document.getElementById('midiInputSelect');
+            const midiTargetSelect = document.getElementById('midiTargetSelect');
             const midiKeyboardEl = document.getElementById('midiKeyboard');
             const deckElements = Array.from(document.querySelectorAll('.sample-browser[data-deck]'));
             let samplerDecks = [];
@@ -1143,7 +1179,7 @@
                 key.classList.toggle('active', active);
             }
 
-            function noteOn(note, velocity = 100) {
+            function keyboardNoteOn(note, velocity = 100) {
                 if (activeVoices.has(note)) return;
 
                 initAudioContext();
@@ -1169,7 +1205,7 @@
                 setKeyboardKeyActive(note, true);
             }
 
-            function noteOff(note) {
+            function keyboardNoteOff(note) {
                 const voice = activeVoices.get(note);
                 if (!voice || !audioContext) {
                     setKeyboardKeyActive(note, false);
@@ -1236,18 +1272,18 @@
                         if (note < 0) return;
                         key.setPointerCapture?.(e.pointerId);
                         pointerNotes.set(e.pointerId, note);
-                        noteOn(note, 110);
+                        keyboardNoteOn(note, 110);
                     });
 
                     key.addEventListener('pointerup', (e) => {
                         const note = pointerNotes.get(e.pointerId);
-                        if (note != null) noteOff(note);
+                        if (note != null) keyboardNoteOff(note);
                         pointerNotes.delete(e.pointerId);
                     });
 
                     key.addEventListener('pointercancel', (e) => {
                         const note = pointerNotes.get(e.pointerId);
-                        if (note != null) noteOff(note);
+                        if (note != null) keyboardNoteOff(note);
                         pointerNotes.delete(e.pointerId);
                     });
 
@@ -1262,6 +1298,10 @@
             const midiInputs = new Map();
             const midiConfig = {
                 channel: 1,
+                rootNote: 60,
+                isEnabled: false,
+                selectedInputId: 'all',
+                targetMode: 'OMNI',
                 ccMap: {
                     20: 'Drive',
                     21: 'Tone',
@@ -1276,14 +1316,6 @@
                     30: 'Ratio',
                     31: 'Gain',
                     32: 'Master'
-                },
-                noteMap: {
-                    36: 'play',
-                    37: 'stop',
-                    38: 'loop',
-                    48: 'play-b',
-                    49: 'stop-b',
-                    50: 'loop-b'
                 }
             };
 
@@ -1298,8 +1330,8 @@
                 const entries = Object.entries(midiConfig.ccMap)
                     .map(([cc, param]) => `CC${cc}:${param}`)
                     .join(' · ');
-                midiMapPreview.textContent = `${entries} · Notes 36/37/38 = DeckA Play/Stop/Loop · 48/49/50 = DeckB Play/Stop/Loop`;
-                midiMapPreview.title = 'Class-compliant USB MIDI input mapping for Launchkey/Ableton Move controllers';
+                midiMapPreview.textContent = `${entries} · Note On/Off => sampler pitch+velocity · CC120/123 panic`;
+                midiMapPreview.title = 'Class-compliant USB MIDI: notes trigger deck samples, velocity scales deck gain';
             }
 
             function setParamFromMidi(param, ccValue) {
@@ -1313,18 +1345,50 @@
                 setKnobUI(target, nextValue);
             }
 
-            function handleMidiTransport(action) {
+            function getTargetDecks() {
                 const deckA = samplerDecks[0];
                 const deckB = samplerDecks[1];
+                if (midiConfig.targetMode === 'A') return [deckA].filter(Boolean);
+                if (midiConfig.targetMode === 'B') return [deckB].filter(Boolean);
+                return [deckA, deckB].filter(Boolean);
+            }
 
-                if (action === 'play') deckA?.playSample();
-                if (action === 'stop') deckA?.stopSample();
-                if (action === 'loop') deckA?.toggleLoop();
+            function panicAllMidiNotes() {
+                samplerDecks.forEach((deck) => deck?.panicMidiNotes?.());
+                for (const note of Array.from(activeVoices.keys())) {
+                    keyboardNoteOff(note);
+                }
+                updateMidiStatus('MIDI panic: all notes stopped');
+            }
 
-                // Optional secondary deck transport for dual-sample operation.
-                if (action === 'play-b') deckB?.playSample();
-                if (action === 'stop-b') deckB?.stopSample();
-                if (action === 'loop-b') deckB?.toggleLoop();
+            function applyInputRouting() {
+                midiInputs.forEach((input) => {
+                    if (!input) return;
+                    const shouldListen = midiConfig.isEnabled && (midiConfig.selectedInputId === 'all' || midiConfig.selectedInputId === input.id);
+                    input.onmidimessage = shouldListen ? onMIDIMessage : null;
+                });
+            }
+
+            function populateMidiInputSelect() {
+                if (!midiInputSelect) return;
+                midiInputSelect.innerHTML = '';
+
+                const allOpt = document.createElement('option');
+                allOpt.value = 'all';
+                allOpt.textContent = 'All inputs';
+                midiInputSelect.appendChild(allOpt);
+
+                midiInputs.forEach((input) => {
+                    const opt = document.createElement('option');
+                    opt.value = input.id;
+                    opt.textContent = input.name || 'Unnamed USB MIDI';
+                    midiInputSelect.appendChild(opt);
+                });
+
+                const hasSelected = Array.from(midiInputSelect.options).some((o) => o.value === midiConfig.selectedInputId);
+                if (!hasSelected) midiConfig.selectedInputId = 'all';
+                midiInputSelect.value = midiConfig.selectedInputId;
+                midiInputSelect.disabled = !midiConfig.isEnabled;
             }
 
             function onMIDIMessage(event) {
@@ -1333,8 +1397,12 @@
                 const channel = (status & 0x0F) + 1;
                 if (channel !== midiConfig.channel) return;
 
-                // CC control
                 if (type === 0xB0) {
+                    if (data1 === 120 || data1 === 123) {
+                        panicAllMidiNotes();
+                        return;
+                    }
+
                     const param = midiConfig.ccMap[data1];
                     if (param) {
                         setParamFromMidi(param, data2);
@@ -1343,61 +1411,84 @@
                     return;
                 }
 
-                // Note on / off: mapped notes run transport; others play the on-device keyboard synth.
                 if (type === 0x90 && data2 > 0) {
-                    const action = midiConfig.noteMap[data1];
-                    if (action) {
-                        handleMidiTransport(action);
-                        updateMidiStatus(`MIDI Ch${channel}: Note ${data1} -> ${action.toUpperCase()}`);
-                    } else {
-                        noteOn(data1, data2);
-                    }
+                    const targets = getTargetDecks();
+                    targets.forEach((deck) => deck.triggerMidiNote?.(data1, data2, midiConfig.rootNote));
+                    updateMidiStatus(`MIDI Ch${channel}: NoteOn ${data1} vel ${data2} -> ${midiConfig.targetMode}`);
                     return;
                 }
 
                 if (type === 0x80 || (type === 0x90 && data2 === 0)) {
-                    noteOff(data1);
+                    const targets = getTargetDecks();
+                    targets.forEach((deck) => deck.releaseMidiNote?.(data1));
+                    updateMidiStatus(`MIDI Ch${channel}: NoteOff ${data1}`);
                 }
-            }
-
-            function bindMidiInput(input) {
-                if (!input) return;
-                input.onmidimessage = onMIDIMessage;
-                midiInputs.set(input.id, input);
             }
 
             function refreshMidiInputs() {
                 if (!midiAccess) return;
                 midiInputs.clear();
-                midiAccess.inputs.forEach((input) => bindMidiInput(input));
+                midiAccess.inputs.forEach((input) => {
+                    midiInputs.set(input.id, input);
+                });
+
+                populateMidiInputSelect();
+                applyInputRouting();
 
                 if (midiInputs.size > 0) {
                     const names = Array.from(midiInputs.values()).map((i) => i.name || 'Unnamed USB MIDI').join(', ');
-                    updateMidiStatus(`MIDI ready (USB): ${names}`);
+                    updateMidiStatus(midiConfig.isEnabled ? `MIDI On: ${names}` : `MIDI ready: ${names}`);
                 } else {
-                    updateMidiStatus('MIDI enabled. Connect a USB-C/USB MIDI controller.');
+                    updateMidiStatus(midiConfig.isEnabled ? 'MIDI On. Connect a USB-C/USB MIDI controller.' : 'MIDI Off');
                 }
             }
 
-            async function enableMidi() {
-                if (!navigator.requestMIDIAccess) {
-                    updateMidiStatus('Web MIDI not supported in this browser.', true);
+            async function setMidiEnabled(enabled) {
+                if (enabled) {
+                    if (!navigator.requestMIDIAccess) {
+                        updateMidiStatus('Web MIDI not supported in this browser.', true);
+                        return;
+                    }
+                    try {
+                        if (!midiAccess) {
+                            midiAccess = await navigator.requestMIDIAccess({ sysex: false });
+                            midiAccess.onstatechange = refreshMidiInputs;
+                        }
+                        midiConfig.isEnabled = true;
+                        if (midiBtn) midiBtn.textContent = 'MIDI OFF';
+                        refreshMidiInputs();
+                    } catch (err) {
+                        updateMidiStatus('MIDI permission denied or unavailable.', true);
+                    }
                     return;
                 }
-                try {
-                    midiAccess = await navigator.requestMIDIAccess({ sysex: false });
-                    midiAccess.onstatechange = refreshMidiInputs;
-                    refreshMidiInputs();
-                    if (midiBtn) {
-                        midiBtn.textContent = 'MIDI Enabled';
-                        midiBtn.disabled = true;
-                    }
-                } catch (err) {
-                    updateMidiStatus('MIDI permission denied or unavailable.', true);
-                }
+
+                midiConfig.isEnabled = false;
+                applyInputRouting();
+                panicAllMidiNotes();
+                if (midiBtn) midiBtn.textContent = 'MIDI ON';
+                if (midiInputSelect) midiInputSelect.disabled = true;
+                updateMidiStatus('MIDI: Off');
             }
 
-            if (midiBtn) midiBtn.addEventListener('click', enableMidi);
+            if (midiBtn) {
+                midiBtn.addEventListener('click', () => setMidiEnabled(!midiConfig.isEnabled));
+            }
+            if (midiInputSelect) {
+                midiInputSelect.addEventListener('change', (e) => {
+                    midiConfig.selectedInputId = e.target.value || 'all';
+                    applyInputRouting();
+                    updateMidiStatus(`MIDI input: ${midiConfig.selectedInputId === 'all' ? 'All inputs' : (midiInputs.get(midiConfig.selectedInputId)?.name || 'Unknown')}`);
+                });
+            }
+            if (midiTargetSelect) {
+                midiTargetSelect.value = midiConfig.targetMode;
+                midiTargetSelect.addEventListener('change', (e) => {
+                    midiConfig.targetMode = e.target.value || 'OMNI';
+                });
+            }
+
+            populateMidiInputSelect();
             setupMidiMapPreview();
 
             // --- Helper: Init Audio Context ---
@@ -1794,6 +1885,7 @@
                     sampleGain: null,
                     level: 1.0,
                     sourceNode: null,
+                    activeMidiVoices: new Map(),
                     isPlaying: false,
                     isLooping: false,
                     regionStart: 0,
@@ -1975,6 +2067,71 @@
                     }
                 }
 
+                function triggerMidiNote(note, velocity = 127, rootNote = 60) {
+                    initAudioContext();
+                    ensureFxGraph();
+
+                    if (!deck.currentBuffer) {
+                        deck.currentBuffer = createProceduralBuffer();
+                        resetRegion();
+                        drawWaveform();
+                    }
+                    if (!deck.currentBuffer) return;
+
+                    releaseMidiNote(note);
+
+                    const deckGain = ensureDeckGain();
+                    if (!deckGain || !audioContext) return;
+
+                    const velocityNorm = clamp(toNumber(velocity, 127) / 127, 0, 1);
+                    const voiceGain = audioContext.createGain();
+                    const src = audioContext.createBufferSource();
+                    src.buffer = deck.currentBuffer;
+                    src.playbackRate.value = Math.pow(2, (toNumber(note, 60) - toNumber(rootNote, 60)) / 12);
+
+                    const duration = deck.currentBuffer.duration * (deck.regionEnd - deck.regionStart);
+                    const offset = deck.currentBuffer.duration * deck.regionStart;
+                    voiceGain.gain.setValueAtTime(velocityNorm, audioContext.currentTime);
+
+                    src.connect(voiceGain);
+                    voiceGain.connect(deckGain);
+
+                    src.loop = true;
+                    src.loopStart = offset;
+                    src.loopEnd = offset + duration;
+                    src.start(0, offset);
+
+                    const voices = deck.activeMidiVoices.get(note) || [];
+                    const voice = { src, voiceGain };
+                    voices.push(voice);
+                    deck.activeMidiVoices.set(note, voices);
+
+                    src.onended = () => {
+                        const current = deck.activeMidiVoices.get(note) || [];
+                        const next = current.filter((v) => v !== voice);
+                        if (next.length) deck.activeMidiVoices.set(note, next);
+                        else deck.activeMidiVoices.delete(note);
+                    };
+                }
+
+                function releaseMidiNote(note) {
+                    const voices = deck.activeMidiVoices.get(note);
+                    if (!voices || !audioContext) return;
+                    const now = audioContext.currentTime;
+                    voices.forEach(({ src, voiceGain }) => {
+                        try {
+                            voiceGain.gain.cancelScheduledValues(now);
+                            voiceGain.gain.setTargetAtTime(0.0001, now, 0.02);
+                            src.stop(now + 0.09);
+                        } catch (_) {}
+                    });
+                    deck.activeMidiVoices.delete(note);
+                }
+
+                function panicMidiNotes() {
+                    Array.from(deck.activeMidiVoices.keys()).forEach((note) => releaseMidiNote(note));
+                }
+
                 if (deck.importBtn && deck.fileInput) {
                     deck.importBtn.addEventListener('click', () => {
                         initAudioContext();
@@ -2080,6 +2237,9 @@
                     drawWaveform,
                     playSample,
                     stopSample,
+                    triggerMidiNote,
+                    releaseMidiNote,
+                    panicMidiNotes,
                     toggleLoop: () => {
                         deck.isLooping = !deck.isLooping;
                         updateLoopButtonUI();
