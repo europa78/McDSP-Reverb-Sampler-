@@ -84,7 +84,7 @@
 
         .workspace {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(5, 1fr);
             gap: 1px;
             background-color: var(--panel-border);
             flex-grow: 1;
@@ -112,7 +112,7 @@
         }
 
         .display-area {
-            grid-column: span 4;
+            grid-column: span 5;
             background: #000;
             padding: 20px;
             display: flex;
@@ -708,7 +708,42 @@
                 </div>
             </div>
 
-            <!-- Module 3: Reverb -->
+            <!-- Module 3: Delay -->
+            <div class="module">
+                <div class="module-header">
+                    <span>Delay</span>
+                    <span class="led on"></span>
+                </div>
+                <div class="controls-grid">
+                    <div class="control-group">
+                        <div class="knob-container" data-param="Time" data-min="0" data-max="100" data-value="35">
+                            <div class="knob" style="transform: rotate(36deg);"></div>
+                        </div>
+                        <div class="knob-label">Time</div>
+                        <div class="knob-value">35%</div>
+                    </div>
+                    <div class="control-group">
+                        <div class="knob-container" data-param="Feedback" data-min="0" data-max="100" data-value="40">
+                            <div class="knob" style="transform: rotate(54deg);"></div>
+                        </div>
+                        <div class="knob-label">Feedback</div>
+                        <div class="knob-value">40%</div>
+                    </div>
+                    <div class="control-group">
+                        <div class="knob-container" data-param="Mix" data-min="0" data-max="100" data-value="25">
+                            <div class="knob" style="transform: rotate(-45deg);"></div>
+                        </div>
+                        <div class="knob-label">Mix</div>
+                        <div class="knob-value">25%</div>
+                    </div>
+                </div>
+                <div class="btn-row">
+                    <button class="btn btn-blue active">Digital</button>
+                    <button class="btn">Tape</button>
+                </div>
+            </div>
+
+            <!-- Module 4: Reverb -->
             <div class="module">
                 <div class="module-header">
                     <span>Reverb</span>
@@ -743,7 +778,7 @@
                 </div>
             </div>
 
-            <!-- Module 4: Dynamics -->
+            <!-- Module 5: Dynamics -->
             <div class="module">
                 <div class="module-header">
                     <span>Dynamics</span>
@@ -1364,6 +1399,17 @@
                 toneFilter.type = 'lowpass';
                 const distLevel = audioContext.createGain();
 
+                // Delay stage
+                const delayNode = audioContext.createDelay(1.2);
+                delayNode.delayTime.value = 0.24;
+                const delayFeedback = audioContext.createGain();
+                delayFeedback.gain.value = 0.35;
+                const delayFilter = audioContext.createBiquadFilter();
+                delayFilter.type = 'lowpass';
+                delayFilter.frequency.value = 6800;
+                const delayWet = audioContext.createGain();
+                delayWet.gain.value = 0.18;
+
                 // Reverb stage (with predelay + optional modulation)
                 const preDelay = audioContext.createDelay(0.2); // up to 200ms
                 const modDelay = audioContext.createDelay(0.05); // subtle modulation
@@ -1409,6 +1455,13 @@
                 // dry path
                 distLevel.connect(dryGain);
 
+                // delay path
+                distLevel.connect(delayNode);
+                delayNode.connect(delayFilter);
+                delayFilter.connect(delayWet);
+                delayFilter.connect(delayFeedback);
+                delayFeedback.connect(delayNode);
+
                 // wet path: predelay -> modDelay -> convolver -> EQ -> wetGain
                 distLevel.connect(preDelay);
                 preDelay.connect(modDelay);
@@ -1421,6 +1474,7 @@
                 const sum = audioContext.createGain();
                 dryGain.connect(sum);
                 wetGain.connect(sum);
+                delayWet.connect(sum);
 
                 sum.connect(compressor);
                 compressor.connect(makeupGain);
@@ -1432,6 +1486,7 @@
                     output: masterGain,
                     nodes: {
                         driveGain, shaper, toneFilter, distLevel,
+                        delayNode, delayFeedback, delayFilter, delayWet,
                         preDelay, modDelay, modDepth, lfo, lfoGain,
                         convolver, lowCut, highCut,
                         dryGain, wetGain,
@@ -1555,6 +1610,24 @@
                         const norm = clamp(v / 100, 0, 1);
                         // 0..1.6
                         n.distLevel.gain.setTargetAtTime(norm * 1.6, t, 0.01);
+                        break;
+                    }
+
+                    // --- Delay ---
+                    case 'Time': {
+                        const norm = clamp(v / 100, 0, 1);
+                        const dt = 0.03 + norm * 0.87; // 30ms..900ms
+                        n.delayNode.delayTime.setTargetAtTime(dt, t, 0.02);
+                        break;
+                    }
+                    case 'Feedback': {
+                        const norm = clamp(v / 100, 0, 1);
+                        n.delayFeedback.gain.setTargetAtTime(norm * 0.92, t, 0.02);
+                        break;
+                    }
+                    case 'Mix': {
+                        const norm = clamp(v / 100, 0, 1);
+                        n.delayWet.gain.setTargetAtTime(norm * 0.8, t, 0.02);
                         break;
                     }
 
