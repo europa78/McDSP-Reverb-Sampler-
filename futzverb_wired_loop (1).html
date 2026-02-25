@@ -522,6 +522,64 @@
             text-overflow: ellipsis;
         }
 
+        .keyboard-rack {
+            background: #101013;
+            border-top: 1px solid #2b2b31;
+            border-bottom: 1px solid #2b2b31;
+            padding: 10px 14px 14px;
+        }
+
+        .keyboard-label {
+            font-family: var(--font-tech);
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+            letter-spacing: 1px;
+        }
+
+        .midi-keyboard {
+            position: relative;
+            height: 120px;
+            background: #08080a;
+            border: 1px solid #303036;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .midi-key {
+            position: absolute;
+            border: 1px solid #1d1d21;
+            border-radius: 0 0 4px 4px;
+            cursor: pointer;
+            touch-action: none;
+        }
+
+        .midi-key.white {
+            top: 0;
+            height: 100%;
+            background: linear-gradient(180deg, #f2f3f5 0%, #d4d7dc 100%);
+            z-index: 1;
+        }
+
+        .midi-key.black {
+            top: 0;
+            height: 72%;
+            background: linear-gradient(180deg, #3e3e44 0%, #141418 90%);
+            border-color: #0e0e11;
+            z-index: 2;
+            border-radius: 0 0 3px 3px;
+        }
+
+        .midi-key.active.white {
+            background: linear-gradient(180deg, #c8ffdd 0%, #8deeaf 100%);
+            box-shadow: inset 0 -6px 12px rgba(74, 222, 128, 0.45);
+        }
+
+        .midi-key.active.black {
+            background: linear-gradient(180deg, #5cd69d 0%, #1f8f61 90%);
+            box-shadow: inset 0 -6px 12px rgba(0, 0, 0, 0.45), 0 0 6px rgba(74, 222, 128, 0.5);
+        }
+
         @media (max-width: 800px) {
             .workspace { grid-template-columns: 1fr 1fr; }
             .display-area { grid-column: span 2; }
@@ -721,6 +779,11 @@
             </div>
         </div>
 
+        <section class="keyboard-rack" aria-label="MIDI keyboard">
+            <div class="keyboard-label">MIDI KEYBOARD • 5 OCTAVES</div>
+            <div class="midi-keyboard" id="midiKeyboard"></div>
+        </section>
+
         <footer class="footer">
             <div class="sampler-stack">
                 <div class="sample-browser" data-deck="A">
@@ -813,6 +876,7 @@
             const midiBtn = document.getElementById('midiBtn');
             const midiStatus = document.getElementById('midiStatus');
             const midiMapPreview = document.getElementById('midiMapPreview');
+            const midiKeyboardEl = document.getElementById('midiKeyboard');
             const deckElements = Array.from(document.querySelectorAll('.sample-browser[data-deck]'));
             let samplerDecks = [];
 
@@ -997,7 +1061,140 @@
             });
 
 
-            // --- 0b. MIDI + USB class-compliant support (Launchkey / Ableton Move style) ---
+            // --- 0b. On-device 5-octave MIDI keyboard ---
+            const keyboardConfig = {
+                startMidi: 36, // C2
+                octaves: 5
+            };
+            const keyboardKeys = new Map();
+            const activeVoices = new Map();
+            const pointerNotes = new Map();
+
+            function midiToFreq(note) {
+                return 440 * Math.pow(2, (note - 69) / 12);
+            }
+
+            function setKeyboardKeyActive(note, active) {
+                const key = keyboardKeys.get(note);
+                if (!key) return;
+                key.classList.toggle('active', active);
+            }
+
+            function noteOn(note, velocity = 100) {
+                if (activeVoices.has(note)) return;
+
+                initAudioContext();
+                ensureFxGraph();
+                if (!audioContext) return;
+
+                const osc = audioContext.createOscillator();
+                const gain = audioContext.createGain();
+                const now = audioContext.currentTime;
+                const amp = clamp((toNumber(velocity, 100) / 127) * 0.23, 0.02, 0.35);
+
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(midiToFreq(note), now);
+
+                gain.gain.setValueAtTime(0.0001, now);
+                gain.gain.exponentialRampToValueAtTime(amp, now + 0.012);
+
+                osc.connect(gain);
+                gain.connect((fx && fx.input) ? fx.input : audioContext.destination);
+                osc.start(now);
+
+                activeVoices.set(note, { osc, gain });
+                setKeyboardKeyActive(note, true);
+            }
+
+            function noteOff(note) {
+                const voice = activeVoices.get(note);
+                if (!voice || !audioContext) {
+                    setKeyboardKeyActive(note, false);
+                    return;
+                }
+
+                const now = audioContext.currentTime;
+                voice.gain.gain.cancelScheduledValues(now);
+                voice.gain.gain.setTargetAtTime(0.0001, now, 0.045);
+                try { voice.osc.stop(now + 0.18); } catch (_) {}
+                try { voice.osc.disconnect(); } catch (_) {}
+                try { voice.gain.disconnect(); } catch (_) {}
+
+                activeVoices.delete(note);
+                setKeyboardKeyActive(note, false);
+            }
+
+            function buildMidiKeyboard() {
+                if (!midiKeyboardEl) return;
+                midiKeyboardEl.innerHTML = '';
+
+                const totalNotes = keyboardConfig.octaves * 12;
+                const notes = Array.from({ length: totalNotes }, (_, i) => keyboardConfig.startMidi + i);
+                const whiteSet = new Set([0, 2, 4, 5, 7, 9, 11]);
+                const whiteNotes = notes.filter((n) => whiteSet.has(n % 12));
+                const whiteWidth = 100 / whiteNotes.length;
+
+                const whitePositions = new Map();
+                whiteNotes.forEach((note, whiteIndex) => {
+                    const key = document.createElement('button');
+                    key.type = 'button';
+                    key.className = 'midi-key white';
+                    key.dataset.note = String(note);
+                    key.style.left = `${(whiteIndex * whiteWidth).toFixed(4)}%`;
+                    key.style.width = `${whiteWidth.toFixed(4)}%`;
+                    key.setAttribute('aria-label', `MIDI note ${note}`);
+                    midiKeyboardEl.appendChild(key);
+                    keyboardKeys.set(note, key);
+                    whitePositions.set(note, whiteIndex);
+                });
+
+                notes.forEach((note) => {
+                    const semitone = note % 12;
+                    if (whiteSet.has(semitone)) return;
+
+                    const leftWhite = note - 1;
+                    const leftIndex = whitePositions.get(leftWhite);
+                    if (leftIndex == null) return;
+
+                    const key = document.createElement('button');
+                    key.type = 'button';
+                    key.className = 'midi-key black';
+                    key.dataset.note = String(note);
+                    key.style.left = `${((leftIndex + 0.7) * whiteWidth).toFixed(4)}%`;
+                    key.style.width = `${(whiteWidth * 0.6).toFixed(4)}%`;
+                    key.setAttribute('aria-label', `MIDI note ${note}`);
+                    midiKeyboardEl.appendChild(key);
+                    keyboardKeys.set(note, key);
+                });
+
+                midiKeyboardEl.querySelectorAll('.midi-key').forEach((key) => {
+                    key.addEventListener('pointerdown', (e) => {
+                        const note = toNumber(key.dataset.note, -1);
+                        if (note < 0) return;
+                        key.setPointerCapture?.(e.pointerId);
+                        pointerNotes.set(e.pointerId, note);
+                        noteOn(note, 110);
+                    });
+
+                    key.addEventListener('pointerup', (e) => {
+                        const note = pointerNotes.get(e.pointerId);
+                        if (note != null) noteOff(note);
+                        pointerNotes.delete(e.pointerId);
+                    });
+
+                    key.addEventListener('pointercancel', (e) => {
+                        const note = pointerNotes.get(e.pointerId);
+                        if (note != null) noteOff(note);
+                        pointerNotes.delete(e.pointerId);
+                    });
+
+                    key.addEventListener('contextmenu', (e) => e.preventDefault());
+                });
+            }
+
+            buildMidiKeyboard();
+
+            // --- 0c. MIDI + USB class-compliant support (Launchkey / Ableton Move style) ---
             let midiAccess = null;
             const midiInputs = new Map();
             const midiConfig = {
@@ -1083,13 +1280,20 @@
                     return;
                 }
 
-                // Note on (or Note off via velocity 0) transport shortcuts
+                // Note on / off: mapped notes run transport; others play the on-device keyboard synth.
                 if (type === 0x90 && data2 > 0) {
                     const action = midiConfig.noteMap[data1];
                     if (action) {
                         handleMidiTransport(action);
                         updateMidiStatus(`MIDI Ch${channel}: Note ${data1} -> ${action.toUpperCase()}`);
+                    } else {
+                        noteOn(data1, data2);
                     }
+                    return;
+                }
+
+                if (type === 0x80 || (type === 0x90 && data2 === 0)) {
+                    noteOff(data1);
                 }
             }
 
