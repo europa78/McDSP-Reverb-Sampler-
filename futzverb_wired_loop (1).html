@@ -460,6 +460,61 @@
             line-height: 1.2;
         }
 
+        .midi-panel {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            min-width: 250px;
+            background: #1a1a1c;
+            border: 1px solid #333;
+            border-radius: 6px;
+            padding: 8px 10px;
+            height: 80px;
+            gap: 6px;
+        }
+
+        .midi-top-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .midi-status {
+            font-size: 0.62rem;
+            color: var(--text-muted);
+            font-family: var(--font-tech);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .midi-btn {
+            padding: 4px 8px;
+            font-size: 0.62rem;
+            border: 1px solid #444;
+            border-radius: 4px;
+            background: #2b2b30;
+            color: #ddd;
+            cursor: pointer;
+            font-family: var(--font-tech);
+        }
+
+        .midi-btn:hover {
+            border-color: var(--accent-blue);
+            color: var(--accent-blue);
+        }
+
+        .midi-map {
+            font-family: var(--font-tech);
+            font-size: 0.55rem;
+            color: #7faee6;
+            line-height: 1.25;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
         @media (max-width: 800px) {
             .workspace { grid-template-columns: 1fr 1fr; }
             .display-area { grid-column: span 2; }
@@ -695,6 +750,14 @@
                 </div>
                 <span class="master-label" style="color: var(--accent-green)">90</span>
             </div>
+
+            <div class="midi-panel" aria-live="polite">
+                <div class="midi-top-row">
+                    <span class="midi-status" id="midiStatus">MIDI: Not connected</span>
+                    <button class="midi-btn" id="midiBtn">Enable MIDI</button>
+                </div>
+                <div class="midi-map" id="midiMapPreview">USB MIDI map ready: CC 20-32, Ch1, plus Note transport.</div>
+            </div>
         </footer>
     </div>
 
@@ -726,6 +789,9 @@
             const playBtn = document.getElementById('playBtn');
             const stopBtn = document.getElementById('stopBtn');
             const loopBtn = document.getElementById('loopBtn');
+            const midiBtn = document.getElementById('midiBtn');
+            const midiStatus = document.getElementById('midiStatus');
+            const midiMapPreview = document.getElementById('midiMapPreview');
 
             // --- 0. Knob Interaction (UI) ---
             // The HTML defines knobs via .knob-container + data-min/data-max/data-value,
@@ -907,6 +973,135 @@
                 c.addEventListener('keydown', onKnobKeyDown);
             });
 
+
+            // --- 0b. MIDI + USB class-compliant support (Launchkey / Ableton Move style) ---
+            let midiAccess = null;
+            const midiInputs = new Map();
+            const midiConfig = {
+                channel: 1,
+                ccMap: {
+                    20: 'Drive',
+                    21: 'Tone',
+                    22: 'Level',
+                    23: 'Size',
+                    24: 'Diff',
+                    25: 'Mod',
+                    26: 'Decay',
+                    27: 'Low Cut',
+                    28: 'High Cut',
+                    29: 'Thresh',
+                    30: 'Ratio',
+                    31: 'Gain',
+                    32: 'Master'
+                },
+                noteMap: {
+                    36: 'play',
+                    37: 'stop',
+                    38: 'loop'
+                }
+            };
+
+            function updateMidiStatus(text, isError = false) {
+                if (!midiStatus) return;
+                midiStatus.textContent = text;
+                midiStatus.style.color = isError ? 'var(--accent-red)' : 'var(--text-muted)';
+            }
+
+            function setupMidiMapPreview() {
+                if (!midiMapPreview) return;
+                const entries = Object.entries(midiConfig.ccMap)
+                    .map(([cc, param]) => `CC${cc}:${param}`)
+                    .join(' · ');
+                midiMapPreview.textContent = `${entries} · Notes 36/37/38 = Play/Stop/Loop`;
+                midiMapPreview.title = 'Class-compliant USB MIDI input mapping for Launchkey/Ableton Move controllers';
+            }
+
+            function setParamFromMidi(param, ccValue) {
+                const target = knobContainers.find((k) => k.dataset.param === param);
+                if (!target) return;
+
+                const min = toNumber(target.dataset.min, 0);
+                const max = toNumber(target.dataset.max, 100);
+                const norm = clamp(toNumber(ccValue, 0) / 127, 0, 1);
+                const nextValue = min + ((max - min) * norm);
+                setKnobUI(target, nextValue);
+            }
+
+            function handleMidiTransport(action) {
+                if (action === 'play') playSample();
+                if (action === 'stop') stopSample();
+                if (action === 'loop') {
+                    isLooping = !isLooping;
+                    updateLoopButtonUI();
+                    updateSourceLoopingFromRegion();
+                }
+            }
+
+            function onMIDIMessage(event) {
+                const [status, data1, data2] = event.data;
+                const type = status & 0xF0;
+                const channel = (status & 0x0F) + 1;
+                if (channel !== midiConfig.channel) return;
+
+                // CC control
+                if (type === 0xB0) {
+                    const param = midiConfig.ccMap[data1];
+                    if (param) {
+                        setParamFromMidi(param, data2);
+                        updateMidiStatus(`MIDI Ch${channel}: CC${data1} -> ${param} (${data2})`);
+                    }
+                    return;
+                }
+
+                // Note on (or Note off via velocity 0) transport shortcuts
+                if (type === 0x90 && data2 > 0) {
+                    const action = midiConfig.noteMap[data1];
+                    if (action) {
+                        handleMidiTransport(action);
+                        updateMidiStatus(`MIDI Ch${channel}: Note ${data1} -> ${action.toUpperCase()}`);
+                    }
+                }
+            }
+
+            function bindMidiInput(input) {
+                if (!input) return;
+                input.onmidimessage = onMIDIMessage;
+                midiInputs.set(input.id, input);
+            }
+
+            function refreshMidiInputs() {
+                if (!midiAccess) return;
+                midiInputs.clear();
+                midiAccess.inputs.forEach((input) => bindMidiInput(input));
+
+                if (midiInputs.size > 0) {
+                    const names = Array.from(midiInputs.values()).map((i) => i.name || 'Unnamed USB MIDI').join(', ');
+                    updateMidiStatus(`MIDI ready (USB): ${names}`);
+                } else {
+                    updateMidiStatus('MIDI enabled. Connect a USB-C/USB MIDI controller.');
+                }
+            }
+
+            async function enableMidi() {
+                if (!navigator.requestMIDIAccess) {
+                    updateMidiStatus('Web MIDI not supported in this browser.', true);
+                    return;
+                }
+                try {
+                    midiAccess = await navigator.requestMIDIAccess({ sysex: false });
+                    midiAccess.onstatechange = refreshMidiInputs;
+                    refreshMidiInputs();
+                    if (midiBtn) {
+                        midiBtn.textContent = 'MIDI Enabled';
+                        midiBtn.disabled = true;
+                    }
+                } catch (err) {
+                    updateMidiStatus('MIDI permission denied or unavailable.', true);
+                }
+            }
+
+            if (midiBtn) midiBtn.addEventListener('click', enableMidi);
+            setupMidiMapPreview();
 
             // --- Helper: Init Audio Context ---
             const initAudioContext = () => {
