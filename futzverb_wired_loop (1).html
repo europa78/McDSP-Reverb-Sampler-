@@ -344,6 +344,32 @@
         .sb-controls {
             display: flex;
             gap: 5px;
+            align-items: center;
+        }
+
+        .sb-volume {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            margin-left: 4px;
+            padding-left: 6px;
+            border-left: 1px solid #3a3a3f;
+            font-size: 0.56rem;
+            color: #9aa0a9;
+            font-family: var(--font-tech);
+        }
+
+        .sb-volume input[type="range"] {
+            width: 54px;
+            accent-color: var(--accent-green);
+            cursor: pointer;
+            height: 14px;
+        }
+
+        .sb-volume-value {
+            min-width: 20px;
+            text-align: right;
+            color: var(--accent-green);
         }
 
         .sb-transport-btn {
@@ -830,6 +856,7 @@
                                 <button class="sb-transport-btn" data-role="stop" title="Stop">&#9632;</button>
                                 <button class="sb-transport-btn" data-role="loop" title="Loop" aria-pressed="false">&#8734;</button>
                                 <button class="sb-import-btn" data-role="import">IMPORT</button>
+                                <label class="sb-volume">VOL <input type="range" data-role="deck-volume" min="0" max="100" value="100" /><span class="sb-volume-value" data-role="deck-volume-value">100</span></label>
                             </div>
                         </div>
                         <ul class="sb-list" data-role="sample-list">
@@ -859,6 +886,7 @@
                                 <button class="sb-transport-btn" data-role="stop" title="Stop">&#9632;</button>
                                 <button class="sb-transport-btn" data-role="loop" title="Loop" aria-pressed="false">&#8734;</button>
                                 <button class="sb-import-btn" data-role="import">IMPORT</button>
+                                <label class="sb-volume">VOL <input type="range" data-role="deck-volume" min="0" max="100" value="100" /><span class="sb-volume-value" data-role="deck-volume-value">100</span></label>
                             </div>
                         </div>
                         <ul class="sb-list" data-role="sample-list">
@@ -1745,6 +1773,8 @@
                 const importBtn = root.querySelector('[data-role="import"]');
                 const fileInput = root.querySelector('[data-role="audio-input"]');
                 const sampleList = root.querySelector('[data-role="sample-list"]');
+                const volumeSlider = root.querySelector('[data-role="deck-volume"]');
+                const volumeValue = root.querySelector('[data-role="deck-volume-value"]');
 
                 const deck = {
                     index,
@@ -1758,7 +1788,11 @@
                     importBtn,
                     fileInput,
                     sampleList,
+                    volumeSlider,
+                    volumeValue,
                     currentBuffer: null,
+                    sampleGain: null,
+                    level: 1.0,
                     sourceNode: null,
                     isPlaying: false,
                     isLooping: false,
@@ -1773,6 +1807,26 @@
                     deck.loopBtn.classList.toggle('looping', deck.isLooping);
                     deck.loopBtn.setAttribute('aria-pressed', String(deck.isLooping));
                     deck.loopBtn.title = deck.isLooping ? 'Loop: On' : 'Loop: Off';
+                }
+
+                function ensureDeckGain() {
+                    if (!audioContext || !fx) return null;
+                    if (!deck.sampleGain) {
+                        deck.sampleGain = audioContext.createGain();
+                        deck.sampleGain.connect(fx.input);
+                    }
+                    deck.sampleGain.gain.setTargetAtTime(deck.level, audioContext.currentTime, 0.01);
+                    return deck.sampleGain;
+                }
+
+                function updateDeckVolume(value) {
+                    const norm = clamp(toNumber(value, 100) / 100, 0, 1);
+                    deck.level = norm;
+                    if (deck.volumeSlider) deck.volumeSlider.value = String(Math.round(norm * 100));
+                    if (deck.volumeValue) deck.volumeValue.textContent = String(Math.round(norm * 100));
+                    if (audioContext && deck.sampleGain) {
+                        deck.sampleGain.gain.setTargetAtTime(norm, audioContext.currentTime, 0.02);
+                    }
                 }
 
                 function updateSourceLoopingFromRegion() {
@@ -1894,7 +1948,9 @@
 
                     deck.sourceNode = audioContext.createBufferSource();
                     deck.sourceNode.buffer = deck.currentBuffer;
-                    deck.sourceNode.connect(fx.input);
+                    const deckGain = ensureDeckGain();
+                    if (!deckGain) return;
+                    deck.sourceNode.connect(deckGain);
 
                     const duration = deck.currentBuffer.duration * (deck.regionEnd - deck.regionStart);
                     const offset = deck.currentBuffer.duration * deck.regionStart;
@@ -1961,6 +2017,11 @@
                     updateLoopButtonUI();
                     updateSourceLoopingFromRegion();
                 });
+
+                deck.volumeSlider?.addEventListener('input', (e) => {
+                    updateDeckVolume(e.target.value);
+                });
+                updateDeckVolume(deck.volumeSlider?.value ?? 100);
 
                 deck.sampleList?.querySelectorAll('li').forEach((item) => {
                     item.addEventListener('click', () => {
