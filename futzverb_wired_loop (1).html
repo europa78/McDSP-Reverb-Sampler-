@@ -303,10 +303,17 @@
         }
 
         /* Sample Browser Styles */
-        .sample-browser {
+        .sampler-stack {
             display: flex;
+            flex-direction: column;
+            gap: 8px;
             flex: 1;
             min-width: 300px;
+        }
+
+        .sample-browser {
+            display: flex;
+            width: 100%;
             background: #1a1a1c;
             border: 1px solid #333;
             border-radius: 6px;
@@ -425,7 +432,7 @@
             cursor: default;
         }
 
-        canvas#waveformCanvas {
+        .sb-waveform-container canvas {
             width: 100%;
             height: 100%;
             display: block;
@@ -715,31 +722,63 @@
         </div>
 
         <footer class="footer">
-            <div class="sample-browser">
-                <div class="sb-list-container">
-                    <div class="sb-header">
-                        <span>SAMPLES</span>
-                        <div class="sb-controls">
-                            <button class="sb-transport-btn" id="playBtn" title="Play">&#9658;</button>
-                            <button class="sb-transport-btn" id="stopBtn" title="Stop">&#9632;</button>
-                            <button class="sb-transport-btn" id="loopBtn" title="Loop" aria-pressed="false">&#8734;</button>
-                            <button class="sb-import-btn" id="importBtn">IMPORT</button>
+            <div class="sampler-stack">
+                <div class="sample-browser" data-deck="A">
+                    <div class="sb-list-container">
+                        <div class="sb-header">
+                            <span>SAMPLES A</span>
+                            <div class="sb-controls">
+                                <button class="sb-transport-btn" data-role="play" title="Play">&#9658;</button>
+                                <button class="sb-transport-btn" data-role="stop" title="Stop">&#9632;</button>
+                                <button class="sb-transport-btn" data-role="loop" title="Loop" aria-pressed="false">&#8734;</button>
+                                <button class="sb-import-btn" data-role="import">IMPORT</button>
+                            </div>
                         </div>
+                        <ul class="sb-list" data-role="sample-list">
+                            <li class="active" data-type="default">Kick_Deep.wav</li>
+                            <li data-type="default">Snare_Trap.wav</li>
+                            <li data-type="default">HiHat_Closed_01.wav</li>
+                            <li data-type="default">Atmosphere_Pad.wav</li>
+                            <li data-type="default">Glitch_04.wav</li>
+                            <li data-type="default">Bass_Sub.wav</li>
+                            <li data-type="default">Vox_Chop.wav</li>
+                            <li data-type="default">Interference.wav</li>
+                        </ul>
                     </div>
-                    <ul class="sb-list" id="sampleList">
-                        <li class="active" data-type="default">Kick_Deep.wav</li>
-                        <li data-type="default">Snare_Trap.wav</li>
-                        <li data-type="default">HiHat_Closed_01.wav</li>
-                        <li data-type="default">Atmosphere_Pad.wav</li>
-                        <li data-type="default">Glitch_04.wav</li>
-                        <li data-type="default">Bass_Sub.wav</li>
-                        <li data-type="default">Vox_Chop.wav</li>
-                        <li data-type="default">Interference.wav</li>
-                    </ul>
+                    <div class="sb-waveform-container" data-role="waveform-container">
+                        <span class="sb-label">PREVIEW (DRAG EDGES)</span>
+                        <canvas data-role="waveform"></canvas>
+                    </div>
+                    <input type="file" data-role="audio-input" accept=".wav,.mp3,.aac,.flac,audio/*" style="display: none;" />
                 </div>
-                <div class="sb-waveform-container" id="waveformContainer">
-                    <span class="sb-label">PREVIEW (DRAG EDGES)</span>
-                    <canvas id="waveformCanvas"></canvas>
+
+                <div class="sample-browser" data-deck="B">
+                    <div class="sb-list-container">
+                        <div class="sb-header">
+                            <span>SAMPLES B</span>
+                            <div class="sb-controls">
+                                <button class="sb-transport-btn" data-role="play" title="Play">&#9658;</button>
+                                <button class="sb-transport-btn" data-role="stop" title="Stop">&#9632;</button>
+                                <button class="sb-transport-btn" data-role="loop" title="Loop" aria-pressed="false">&#8734;</button>
+                                <button class="sb-import-btn" data-role="import">IMPORT</button>
+                            </div>
+                        </div>
+                        <ul class="sb-list" data-role="sample-list">
+                            <li class="active" data-type="default">Interference.wav</li>
+                            <li data-type="default">Vox_Chop.wav</li>
+                            <li data-type="default">Bass_Sub.wav</li>
+                            <li data-type="default">Glitch_04.wav</li>
+                            <li data-type="default">Atmosphere_Pad.wav</li>
+                            <li data-type="default">HiHat_Closed_01.wav</li>
+                            <li data-type="default">Snare_Trap.wav</li>
+                            <li data-type="default">Kick_Deep.wav</li>
+                        </ul>
+                    </div>
+                    <div class="sb-waveform-container" data-role="waveform-container">
+                        <span class="sb-label">PREVIEW (DRAG EDGES)</span>
+                        <canvas data-role="waveform"></canvas>
+                    </div>
+                    <input type="file" data-role="audio-input" accept=".wav,.mp3,.aac,.flac,audio/*" style="display: none;" />
                 </div>
             </div>
 
@@ -761,37 +800,21 @@
         </footer>
     </div>
 
-    <!-- Hidden File Input -->
-    <input type="file" id="audioFileInput" accept=".wav,.mp3,.aac,.flac,audio/*" style="display: none;" />
-
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             // --- Global State ---
             let audioContext = null;
-            let currentBuffer = null;
-            let sourceNode = null;
-            let isPlaying = false;
-            let isLooping = false; // transport loop toggle
-            
 
             // FX graph state (built on-demand once audioContext exists)
             let fx = null; // { input, output, nodes... }
             const knobState = Object.create(null);
             let reverbRegenTimer = null;
-            // Waveform/Editing State
-            let regionStart = 0.0; // 0.0 to 1.0
-            let regionEnd = 1.0;   // 0.0 to 1.0
-            let isDraggingStart = false;
-            let isDraggingEnd = false;
-            
-            const canvas = document.getElementById('waveformCanvas');
-            const ctx = canvas.getContext('2d');
-            const playBtn = document.getElementById('playBtn');
-            const stopBtn = document.getElementById('stopBtn');
-            const loopBtn = document.getElementById('loopBtn');
+
             const midiBtn = document.getElementById('midiBtn');
             const midiStatus = document.getElementById('midiStatus');
             const midiMapPreview = document.getElementById('midiMapPreview');
+            const deckElements = Array.from(document.querySelectorAll('.sample-browser[data-deck]'));
+            let samplerDecks = [];
 
             // --- 0. Knob Interaction (UI) ---
             // The HTML defines knobs via .knob-container + data-min/data-max/data-value,
@@ -997,7 +1020,10 @@
                 noteMap: {
                     36: 'play',
                     37: 'stop',
-                    38: 'loop'
+                    38: 'loop',
+                    48: 'play-b',
+                    49: 'stop-b',
+                    50: 'loop-b'
                 }
             };
 
@@ -1012,7 +1038,7 @@
                 const entries = Object.entries(midiConfig.ccMap)
                     .map(([cc, param]) => `CC${cc}:${param}`)
                     .join(' · ');
-                midiMapPreview.textContent = `${entries} · Notes 36/37/38 = Play/Stop/Loop`;
+                midiMapPreview.textContent = `${entries} · Notes 36/37/38 = DeckA Play/Stop/Loop · 48/49/50 = DeckB Play/Stop/Loop`;
                 midiMapPreview.title = 'Class-compliant USB MIDI input mapping for Launchkey/Ableton Move controllers';
             }
 
@@ -1028,13 +1054,17 @@
             }
 
             function handleMidiTransport(action) {
-                if (action === 'play') playSample();
-                if (action === 'stop') stopSample();
-                if (action === 'loop') {
-                    isLooping = !isLooping;
-                    updateLoopButtonUI();
-                    updateSourceLoopingFromRegion();
-                }
+                const deckA = samplerDecks[0];
+                const deckB = samplerDecks[1];
+
+                if (action === 'play') deckA?.playSample();
+                if (action === 'stop') deckA?.stopSample();
+                if (action === 'loop') deckA?.toggleLoop();
+
+                // Optional secondary deck transport for dual-sample operation.
+                if (action === 'play-b') deckB?.playSample();
+                if (action === 'stop-b') deckB?.stopSample();
+                if (action === 'loop-b') deckB?.toggleLoop();
             }
 
             function onMIDIMessage(event) {
@@ -1416,305 +1446,323 @@
                 applyKnobToAudio(param, knobState[param]);
             }
 
-            // --- 1. Import Logic ---
-            const importBtn = document.getElementById('importBtn');
-            const fileInput = document.getElementById('audioFileInput');
-            const sampleList = document.getElementById('sampleList');
-
-            importBtn.addEventListener('click', () => {
-                initAudioContext();
-                fileInput.click();
-            });
-
-            fileInput.addEventListener('change', (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-
-                const li = document.createElement('li');
-                li.textContent = file.name;
-                li.dataset.type = 'imported'; // Marker for real audio
-
-                // UI Updates
-                document.querySelectorAll('#sampleList li').forEach(i => i.classList.remove('active'));
-                sampleList.appendChild(li);
-                li.classList.add('active');
-                li.scrollIntoView({ behavior: 'smooth' });
-
-                // Decode
-                const reader = new FileReader();
-                reader.onload = (ev) => {
-                    const arrayBuffer = ev.target.result;
-                    if (audioContext) {
-                        audioContext.decodeAudioData(arrayBuffer, (buffer) => {
-                            currentBuffer = buffer;
-                            resetRegion();
-                            drawWaveform();
-                            // Ensure FX is ready so playback immediately routes through it
-                            ensureFxGraph();
-                        }, (e) => console.error("Error decoding audio", e));
-                    }
-                };
-                reader.readAsArrayBuffer(file);
-            });
-
-            // --- 2. Transport Controls ---
-            
-            function playSample() {
-                initAudioContext();
-                ensureFxGraph();
-
-                if (!currentBuffer && !isPlaying) {
-                    // Generate a procedural buffer if nothing loaded, just for demo
-                    createProceduralBuffer();
-                }
-                if (!currentBuffer) return;
-
-                stopSample(); // Stop any existing
-
-                sourceNode = audioContext.createBufferSource();
-                sourceNode.buffer = currentBuffer;
-                // Route through FX graph
-                sourceNode.connect(fx.input);
-
-                // Calculate duration and offset based on markers
-                const duration = currentBuffer.duration * (regionEnd - regionStart);
-                const offset = currentBuffer.duration * regionStart;
-
-                // Loop support: when enabled, loop the selected region continuously.
-                sourceNode.loop = isLooping;
-                if (isLooping) {
-                    sourceNode.loopStart = offset;
-                    sourceNode.loopEnd = offset + duration;
-                    sourceNode.start(0, offset); // no duration => doesn't auto-stop
-                } else {
-                    sourceNode.start(0, offset, duration);
-                }
-
-                isPlaying = true;
-                playBtn.classList.add('playing');
-
-                // Only auto-clear on non-loop playback end. (When looping, stopSample() owns UI state.)
-                if (!isLooping) {
-                    sourceNode.onended = () => {
-                        isPlaying = false;
-                        playBtn.classList.remove('playing');
-                    };
-                }
-            }
-
-            function stopSample() {
-                if (sourceNode) {
-                    try { sourceNode.stop(); } catch(e) {}
-                    try { sourceNode.disconnect(); } catch(e) {}
-                    sourceNode = null;
-                }
-                isPlaying = false;
-                playBtn.classList.remove('playing');
-            }
-
-            function updateSourceLoopingFromRegion() {
-                // Update loop points live (useful if user drags region handles while looping).
-                if (!sourceNode || !currentBuffer) return;
-                const duration = currentBuffer.duration * (regionEnd - regionStart);
-                const offset = currentBuffer.duration * regionStart;
-                sourceNode.loop = isLooping;
-                if (isLooping) {
-                    sourceNode.loopStart = offset;
-                    sourceNode.loopEnd = offset + duration;
-                }
-            }
-
-            function updateLoopButtonUI() {
-                if (!loopBtn) return;
-                loopBtn.classList.toggle('looping', isLooping);
-                loopBtn.setAttribute('aria-pressed', String(isLooping));
-                loopBtn.title = isLooping ? 'Loop: On' : 'Loop: Off';
-            }
-            updateLoopButtonUI();
-
-            playBtn.addEventListener('click', playSample);
-            stopBtn.addEventListener('click', stopSample);
-
-            loopBtn.addEventListener('click', () => {
-                isLooping = !isLooping;
-                updateLoopButtonUI();
-                updateSourceLoopingFromRegion();
-            });
-
-            // Keyboard shortcut: "L" toggles loop (when not typing in an input).
-            window.addEventListener('keydown', (e) => {
-                const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
-                if (tag === 'input' || tag === 'textarea') return;
-                if (e.key && e.key.toLowerCase() === 'l') {
-                    isLooping = !isLooping;
-                    updateLoopButtonUI();
-                    updateSourceLoopingFromRegion();
-                }
-            });
-
-            // --- 3. Procedural Generation (for defaults) ---
+            // --- 1. Dual Sampler Decks (A/B) ---
             function createProceduralBuffer() {
-                // Create a 2 second buffer of noise
+                if (!audioContext) return null;
                 const sampleRate = audioContext.sampleRate;
-                const frameCount = sampleRate * 2.0;
+                const frameCount = Math.floor(sampleRate * 2.0);
                 const buffer = audioContext.createBuffer(1, frameCount, sampleRate);
                 const data = buffer.getChannelData(0);
                 for (let i = 0; i < frameCount; i++) {
                     data[i] = (Math.random() * 2 - 1) * Math.exp(-3 * i / frameCount);
                 }
-                currentBuffer = buffer;
-                resetRegion();
-                drawWaveform();
+                return buffer;
             }
 
-            // --- 4. Waveform Drawing with Markers ---
-            function resetRegion() {
-                regionStart = 0.0;
-                regionEnd = 1.0;
-            }
+            function createSamplerDeck(root, index) {
+                const canvas = root.querySelector('[data-role="waveform"]');
+                const ctx = canvas?.getContext('2d');
+                const playBtn = root.querySelector('[data-role="play"]');
+                const stopBtn = root.querySelector('[data-role="stop"]');
+                const loopBtn = root.querySelector('[data-role="loop"]');
+                const importBtn = root.querySelector('[data-role="import"]');
+                const fileInput = root.querySelector('[data-role="audio-input"]');
+                const sampleList = root.querySelector('[data-role="sample-list"]');
 
-            function drawWaveform() {
-                if (!canvas) return;
-                const dpr = window.devicePixelRatio || 1;
-                const rect = canvas.getBoundingClientRect();
-                canvas.width = rect.width * dpr;
-                canvas.height = rect.height * dpr;
-                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                const deck = {
+                    index,
+                    name: root.dataset.deck || String(index + 1),
+                    root,
+                    canvas,
+                    ctx,
+                    playBtn,
+                    stopBtn,
+                    loopBtn,
+                    importBtn,
+                    fileInput,
+                    sampleList,
+                    currentBuffer: null,
+                    sourceNode: null,
+                    isPlaying: false,
+                    isLooping: false,
+                    regionStart: 0,
+                    regionEnd: 1,
+                    isDraggingStart: false,
+                    isDraggingEnd: false
+                };
 
-                const width = rect.width;
-                const height = rect.height;
-                const centerY = height / 2;
-
-                ctx.clearRect(0, 0, width, height);
-
-                if (!currentBuffer) return;
-
-                const data = currentBuffer.getChannelData(0);
-                const step = Math.ceil(data.length / width);
-                const amp = height / 2;
-
-                // Calculate pixel positions for region
-                const startX = Math.floor(regionStart * width);
-                const endX = Math.floor(regionEnd * width);
-
-                // --- Pass 1: Draw Dimmed Waveform (Full) ---
-                ctx.fillStyle = '#2a3a2a'; // Dark green/grey
-                for (let i = 0; i < width; i += 2) {
-                    let min = 1.0, max = -1.0;
-                    for (let j = 0; j < step; j++) {
-                        const datum = data[(i * step) + j] || 0;
-                        if (datum < min) min = datum;
-                        if (datum > max) max = datum;
-                    }
-                    const barHeight = (max - min) * amp;
-                    const y = centerY - (barHeight / 2);
-                    ctx.fillRect(i, y, 1.5, barHeight);
+                function updateLoopButtonUI() {
+                    if (!deck.loopBtn) return;
+                    deck.loopBtn.classList.toggle('looping', deck.isLooping);
+                    deck.loopBtn.setAttribute('aria-pressed', String(deck.isLooping));
+                    deck.loopBtn.title = deck.isLooping ? 'Loop: On' : 'Loop: Off';
                 }
 
-                // --- Pass 2: Draw Bright Waveform (Region) ---
-                ctx.fillStyle = '#4ade80'; // Bright Green
-                for (let i = startX; i < endX; i += 2) {
-                    let min = 1.0, max = -1.0;
-                    for (let j = 0; j < step; j++) {
-                        const datum = data[(i * step) + j] || 0;
-                        if (datum < min) min = datum;
-                        if (datum > max) max = datum;
+                function updateSourceLoopingFromRegion() {
+                    if (!deck.sourceNode || !deck.currentBuffer) return;
+                    const duration = deck.currentBuffer.duration * (deck.regionEnd - deck.regionStart);
+                    const offset = deck.currentBuffer.duration * deck.regionStart;
+                    deck.sourceNode.loop = deck.isLooping;
+                    if (deck.isLooping) {
+                        deck.sourceNode.loopStart = offset;
+                        deck.sourceNode.loopEnd = offset + duration;
                     }
-                    const barHeight = (max - min) * amp;
-                    const y = centerY - (barHeight / 2);
-                    ctx.fillRect(i, y, 1.5, barHeight);
                 }
 
-                // --- Pass 3: Draw Markers ---
-                ctx.fillStyle = '#fff';
-                
-                // Start Handle
-                ctx.beginPath();
-                ctx.moveTo(startX, 0);
-                ctx.lineTo(startX - 6, 8);
-                ctx.lineTo(startX + 6, 8);
-                ctx.fill();
-                ctx.fillRect(startX - 1, 8, 2, height - 16);
+                function resetRegion() {
+                    deck.regionStart = 0;
+                    deck.regionEnd = 1;
+                }
 
-                // End Handle
-                ctx.beginPath();
-                ctx.moveTo(endX, height);
-                ctx.lineTo(endX - 6, height - 8);
-                ctx.lineTo(endX + 6, height - 8);
-                ctx.fill();
-                ctx.fillRect(endX - 1, 8, 2, height - 16);
-            }
+                function drawWaveform() {
+                    if (!deck.canvas || !deck.ctx) return;
+                    const dpr = window.devicePixelRatio || 1;
+                    const rect = deck.canvas.getBoundingClientRect();
+                    if (rect.width <= 0 || rect.height <= 0) return;
 
-            // --- 5. Marker Interaction (Drag Logic) ---
-            const handleHit = (x) => {
-                const width = canvas.width / (window.devicePixelRatio || 1);
-                const startX = regionStart * width;
-                const endX = regionEnd * width;
-                const threshold = 10; // pixels
+                    deck.canvas.width = rect.width * dpr;
+                    deck.canvas.height = rect.height * dpr;
+                    deck.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-                if (Math.abs(x - startX) < threshold) return 'start';
-                if (Math.abs(x - endX) < threshold) return 'end';
-                return null;
-            };
+                    const width = rect.width;
+                    const height = rect.height;
+                    const centerY = height / 2;
+                    deck.ctx.clearRect(0, 0, width, height);
 
-            canvas.addEventListener('mousedown', (e) => {
-                const rect = canvas.getBoundingClientRect();
-                const x = e.clientX - rect.left;
-                const hit = handleHit(x);
-                
-                if (hit === 'start') isDraggingStart = true;
-                if (hit === 'end') isDraggingEnd = true;
-            });
+                    if (!deck.currentBuffer) return;
 
-            window.addEventListener('mousemove', (e) => {
-                if (!isDraggingStart && !isDraggingEnd) {
-                    // Hover cursor logic
-                    const rect = canvas.getBoundingClientRect();
+                    const data = deck.currentBuffer.getChannelData(0);
+                    const step = Math.max(1, Math.ceil(data.length / width));
+                    const amp = height / 2;
+
+                    const startX = Math.floor(deck.regionStart * width);
+                    const endX = Math.floor(deck.regionEnd * width);
+
+                    deck.ctx.fillStyle = '#2a3a2a';
+                    for (let i = 0; i < width; i += 2) {
+                        let min = 1.0;
+                        let max = -1.0;
+                        for (let j = 0; j < step; j++) {
+                            const datum = data[(i * step) + j] || 0;
+                            if (datum < min) min = datum;
+                            if (datum > max) max = datum;
+                        }
+                        const barHeight = (max - min) * amp;
+                        const y = centerY - (barHeight / 2);
+                        deck.ctx.fillRect(i, y, 1.5, barHeight);
+                    }
+
+                    deck.ctx.fillStyle = '#4ade80';
+                    for (let i = startX; i < endX; i += 2) {
+                        let min = 1.0;
+                        let max = -1.0;
+                        for (let j = 0; j < step; j++) {
+                            const datum = data[(i * step) + j] || 0;
+                            if (datum < min) min = datum;
+                            if (datum > max) max = datum;
+                        }
+                        const barHeight = (max - min) * amp;
+                        const y = centerY - (barHeight / 2);
+                        deck.ctx.fillRect(i, y, 1.5, barHeight);
+                    }
+
+                    deck.ctx.fillStyle = '#fff';
+                    deck.ctx.beginPath();
+                    deck.ctx.moveTo(startX, 0);
+                    deck.ctx.lineTo(startX - 6, 8);
+                    deck.ctx.lineTo(startX + 6, 8);
+                    deck.ctx.fill();
+                    deck.ctx.fillRect(startX - 1, 8, 2, height - 16);
+
+                    deck.ctx.beginPath();
+                    deck.ctx.moveTo(endX, height);
+                    deck.ctx.lineTo(endX - 6, height - 8);
+                    deck.ctx.lineTo(endX + 6, height - 8);
+                    deck.ctx.fill();
+                    deck.ctx.fillRect(endX - 1, 8, 2, height - 16);
+                }
+
+                function handleHit(x) {
+                    const width = deck.canvas.width / (window.devicePixelRatio || 1);
+                    const startX = deck.regionStart * width;
+                    const endX = deck.regionEnd * width;
+                    const threshold = 10;
+                    if (Math.abs(x - startX) < threshold) return 'start';
+                    if (Math.abs(x - endX) < threshold) return 'end';
+                    return null;
+                }
+
+                function stopSample() {
+                    if (deck.sourceNode) {
+                        try { deck.sourceNode.stop(); } catch (e) {}
+                        try { deck.sourceNode.disconnect(); } catch (e) {}
+                        deck.sourceNode = null;
+                    }
+                    deck.isPlaying = false;
+                    deck.playBtn?.classList.remove('playing');
+                }
+
+                function playSample() {
+                    initAudioContext();
+                    ensureFxGraph();
+
+                    if (!deck.currentBuffer && !deck.isPlaying) {
+                        deck.currentBuffer = createProceduralBuffer();
+                        resetRegion();
+                        drawWaveform();
+                    }
+                    if (!deck.currentBuffer) return;
+
+                    stopSample();
+
+                    deck.sourceNode = audioContext.createBufferSource();
+                    deck.sourceNode.buffer = deck.currentBuffer;
+                    deck.sourceNode.connect(fx.input);
+
+                    const duration = deck.currentBuffer.duration * (deck.regionEnd - deck.regionStart);
+                    const offset = deck.currentBuffer.duration * deck.regionStart;
+
+                    deck.sourceNode.loop = deck.isLooping;
+                    if (deck.isLooping) {
+                        deck.sourceNode.loopStart = offset;
+                        deck.sourceNode.loopEnd = offset + duration;
+                        deck.sourceNode.start(0, offset);
+                    } else {
+                        deck.sourceNode.start(0, offset, duration);
+                    }
+
+                    deck.isPlaying = true;
+                    deck.playBtn?.classList.add('playing');
+
+                    if (!deck.isLooping) {
+                        deck.sourceNode.onended = () => {
+                            deck.isPlaying = false;
+                            deck.playBtn?.classList.remove('playing');
+                        };
+                    }
+                }
+
+                if (deck.importBtn && deck.fileInput) {
+                    deck.importBtn.addEventListener('click', () => {
+                        initAudioContext();
+                        deck.fileInput.click();
+                    });
+
+                    deck.fileInput.addEventListener('change', (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+
+                        const li = document.createElement('li');
+                        li.textContent = file.name;
+                        li.dataset.type = 'imported';
+
+                        deck.sampleList?.querySelectorAll('li').forEach((item) => item.classList.remove('active'));
+                        deck.sampleList?.appendChild(li);
+                        li.classList.add('active');
+                        li.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+                        const reader = new FileReader();
+                        reader.onload = (ev) => {
+                            const arrayBuffer = ev.target?.result;
+                            if (!audioContext || !arrayBuffer) return;
+                            audioContext.decodeAudioData(arrayBuffer, (buffer) => {
+                                deck.currentBuffer = buffer;
+                                resetRegion();
+                                drawWaveform();
+                                ensureFxGraph();
+                            }, (err) => console.error('Error decoding audio', err));
+                        };
+                        reader.readAsArrayBuffer(file);
+                        deck.fileInput.value = '';
+                    });
+                }
+
+                deck.playBtn?.addEventListener('click', playSample);
+                deck.stopBtn?.addEventListener('click', stopSample);
+                deck.loopBtn?.addEventListener('click', () => {
+                    deck.isLooping = !deck.isLooping;
+                    updateLoopButtonUI();
+                    updateSourceLoopingFromRegion();
+                });
+
+                deck.sampleList?.querySelectorAll('li').forEach((item) => {
+                    item.addEventListener('click', () => {
+                        deck.sampleList.querySelectorAll('li').forEach((i) => i.classList.remove('active'));
+                        item.classList.add('active');
+
+                        if (item.dataset.type === 'default') {
+                            deck.currentBuffer = null;
+                            resetRegion();
+                            drawWaveform();
+                        }
+                    });
+                });
+
+                deck.canvas?.addEventListener('mousedown', (e) => {
+                    const rect = deck.canvas.getBoundingClientRect();
                     const x = e.clientX - rect.left;
                     const hit = handleHit(x);
-                    canvas.style.cursor = hit ? 'ew-resize' : 'default';
-                    return;
-                }
+                    deck.isDraggingStart = hit === 'start';
+                    deck.isDraggingEnd = hit === 'end';
+                });
 
-                const rect = canvas.getBoundingClientRect();
-                const x = e.clientX - rect.left;
-                const width = rect.width;
-                let percent = Math.max(0, Math.min(1, x / width));
+                window.addEventListener('mousemove', (e) => {
+                    if (!deck.canvas) return;
+                    const rect = deck.canvas.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
 
-                if (isDraggingStart) {
-                    regionStart = Math.min(percent, regionEnd - 0.01); // Prevent crossing
-                    drawWaveform();
-                    updateSourceLoopingFromRegion();
-                } else if (isDraggingEnd) {
-                    regionEnd = Math.max(percent, regionStart + 0.01);
-                    drawWaveform();
-                    updateSourceLoopingFromRegion();
-                }
-            });
+                    if (!deck.isDraggingStart && !deck.isDraggingEnd) {
+                        const hit = handleHit(x);
+                        deck.canvas.style.cursor = hit ? 'ew-resize' : 'default';
+                        return;
+                    }
 
-            window.addEventListener('mouseup', () => {
-                isDraggingStart = false;
-                isDraggingEnd = false;
-            });
-
-            // --- 6. List Interactions ---
-            document.querySelectorAll('#sampleList li').forEach((item, index) => {
-                item.addEventListener('click', () => {
-                    document.querySelectorAll('#sampleList li').forEach(i => i.classList.remove('active'));
-                    item.classList.add('active');
-                    
-                    // Reset buffer for default items
-                    if (item.dataset.type === 'default') {
-                        currentBuffer = null; // Will generate on play
-                        resetRegion();
-                        // Draw a dummy waveform for visuals
-                        drawWaveform(); 
+                    const width = rect.width;
+                    const percent = clamp(x / width, 0, 1);
+                    if (deck.isDraggingStart) {
+                        deck.regionStart = Math.min(percent, deck.regionEnd - 0.01);
+                        drawWaveform();
+                        updateSourceLoopingFromRegion();
+                    } else if (deck.isDraggingEnd) {
+                        deck.regionEnd = Math.max(percent, deck.regionStart + 0.01);
+                        drawWaveform();
+                        updateSourceLoopingFromRegion();
                     }
                 });
+
+                window.addEventListener('mouseup', () => {
+                    deck.isDraggingStart = false;
+                    deck.isDraggingEnd = false;
+                });
+
+                updateLoopButtonUI();
+                drawWaveform();
+
+                return {
+                    drawWaveform,
+                    playSample,
+                    stopSample,
+                    toggleLoop: () => {
+                        deck.isLooping = !deck.isLooping;
+                        updateLoopButtonUI();
+                        updateSourceLoopingFromRegion();
+                    }
+                };
+            }
+
+            samplerDecks = deckElements.map((root, index) => createSamplerDeck(root, index));
+
+            // Keyboard shortcut: L toggles loop on deck A.
+            window.addEventListener('keydown', (e) => {
+                const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
+                if (tag === 'input' || tag === 'textarea') return;
+                if (e.key && e.key.toLowerCase() === 'l') {
+                    samplerDecks[0]?.toggleLoop();
+                }
             });
 
             // Resize handler
-            window.addEventListener('resize', drawWaveform);
+            window.addEventListener('resize', () => samplerDecks.forEach((deck) => deck.drawWaveform()));
         });
     </script>
 </body>
