@@ -948,11 +948,12 @@
                     <select id="midiInputSelect" class="midi-select">
                         <option value="all">All inputs</option>
                     </select>
-                    <label for="midiTargetSelect">TARGET</label>
+                    <label for="midiTargetSelect">CHANNEL</label>
                     <select id="midiTargetSelect" class="midi-select">
-                        <option value="A">A</option>
-                        <option value="B">B</option>
-                        <option value="OMNI" selected>OMNI (A+B)</option>
+                        <option value="1">1 (A)</option>
+                        <option value="2">2 (B)</option>
+                        <option value="3">3 (OSC)</option>
+                        <option value="ALL" selected>ALL (1/2/3)</option>
                     </select>
                 </div>
                 <div class="midi-map" id="midiMapPreview">USB MIDI map ready: CC 20-32 · Note On/Off sampler pitch/velocity · CC120/123 panic.</div>
@@ -1297,11 +1298,10 @@
             let midiAccess = null;
             const midiInputs = new Map();
             const midiConfig = {
-                channel: 1,
                 rootNote: 60,
                 isEnabled: false,
                 selectedInputId: 'all',
-                targetMode: 'OMNI',
+                targetMode: 'ALL',
                 ccMap: {
                     20: 'Drive',
                     21: 'Tone',
@@ -1330,8 +1330,8 @@
                 const entries = Object.entries(midiConfig.ccMap)
                     .map(([cc, param]) => `CC${cc}:${param}`)
                     .join(' · ');
-                midiMapPreview.textContent = `${entries} · Note On/Off => sampler pitch+velocity · CC120/123 panic`;
-                midiMapPreview.title = 'Class-compliant USB MIDI: notes trigger deck samples, velocity scales deck gain';
+                midiMapPreview.textContent = `${entries} · Ch1=A · Ch2=B · Ch3=OSC · Note On/Off routes by channel · CC120/123 panic`;
+                midiMapPreview.title = 'MIDI channel routing: 1->A deck, 2->B deck, 3->oscillator keyboard engine';
             }
 
             function setParamFromMidi(param, ccValue) {
@@ -1345,12 +1345,19 @@
                 setKnobUI(target, nextValue);
             }
 
-            function getTargetDecks() {
-                const deckA = samplerDecks[0];
-                const deckB = samplerDecks[1];
-                if (midiConfig.targetMode === 'A') return [deckA].filter(Boolean);
-                if (midiConfig.targetMode === 'B') return [deckB].filter(Boolean);
-                return [deckA, deckB].filter(Boolean);
+            function targetFromChannel(channel) {
+                if (channel === 1) return 'A';
+                if (channel === 2) return 'B';
+                if (channel === 3) return 'OSC';
+                return null;
+            }
+
+            function resolveMidiTarget(channel) {
+                if (midiConfig.targetMode === 'ALL') {
+                    return targetFromChannel(channel);
+                }
+                const forced = Number(midiConfig.targetMode);
+                return channel === forced ? targetFromChannel(forced) : null;
             }
 
             function panicAllMidiNotes() {
@@ -1395,13 +1402,18 @@
                 const [status, data1, data2] = event.data;
                 const type = status & 0xF0;
                 const channel = (status & 0x0F) + 1;
-                if (channel !== midiConfig.channel) return;
+                const target = resolveMidiTarget(channel);
 
                 if (type === 0xB0) {
                     if (data1 === 120 || data1 === 123) {
                         panicAllMidiNotes();
                         return;
                     }
+
+                    // Keep CC mapping consistent: apply only from Ch1, or from forced Ch1 selection.
+                    const ccAccepted = (midiConfig.targetMode === 'ALL' && channel === 1)
+                        || (midiConfig.targetMode === '1' && channel === 1);
+                    if (!ccAccepted) return;
 
                     const param = midiConfig.ccMap[data1];
                     if (param) {
@@ -1411,17 +1423,21 @@
                     return;
                 }
 
+                if (!target) return;
+
                 if (type === 0x90 && data2 > 0) {
-                    const targets = getTargetDecks();
-                    targets.forEach((deck) => deck.triggerMidiNote?.(data1, data2, midiConfig.rootNote));
-                    updateMidiStatus(`MIDI Ch${channel}: NoteOn ${data1} vel ${data2} -> ${midiConfig.targetMode}`);
+                    if (target === 'A') samplerDecks[0]?.triggerMidiNote?.(data1, data2, midiConfig.rootNote);
+                    if (target === 'B') samplerDecks[1]?.triggerMidiNote?.(data1, data2, midiConfig.rootNote);
+                    if (target === 'OSC') keyboardNoteOn(data1, data2);
+                    updateMidiStatus(`MIDI Ch${channel}: NoteOn ${data1} vel ${data2} -> ${target}`);
                     return;
                 }
 
                 if (type === 0x80 || (type === 0x90 && data2 === 0)) {
-                    const targets = getTargetDecks();
-                    targets.forEach((deck) => deck.releaseMidiNote?.(data1));
-                    updateMidiStatus(`MIDI Ch${channel}: NoteOff ${data1}`);
+                    if (target === 'A') samplerDecks[0]?.releaseMidiNote?.(data1);
+                    if (target === 'B') samplerDecks[1]?.releaseMidiNote?.(data1);
+                    if (target === 'OSC') keyboardNoteOff(data1);
+                    updateMidiStatus(`MIDI Ch${channel}: NoteOff ${data1} -> ${target}`);
                 }
             }
 
@@ -1484,7 +1500,8 @@
             if (midiTargetSelect) {
                 midiTargetSelect.value = midiConfig.targetMode;
                 midiTargetSelect.addEventListener('change', (e) => {
-                    midiConfig.targetMode = e.target.value || 'OMNI';
+                    midiConfig.targetMode = e.target.value || 'ALL';
+                    updateMidiStatus(`MIDI channel filter: ${midiConfig.targetMode}`);
                 });
             }
 
