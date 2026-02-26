@@ -587,6 +587,34 @@
             letter-spacing: 1px;
         }
 
+        .keyboard-top-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .keyboard-channel-control {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-family: var(--font-tech);
+            font-size: 0.58rem;
+            color: #8f96a1;
+        }
+
+        .keyboard-channel-control select {
+            background: #121216;
+            color: #d7dde8;
+            border: 1px solid #3f3f45;
+            border-radius: 3px;
+            font-size: 0.58rem;
+            font-family: var(--font-tech);
+            height: 18px;
+            padding: 0 4px;
+        }
+
         .midi-keyboard {
             position: relative;
             height: 120px;
@@ -865,7 +893,16 @@
         </div>
 
         <section class="keyboard-rack" aria-label="MIDI keyboard">
-            <div class="keyboard-label">MIDI KEYBOARD • 5 OCTAVES</div>
+            <div class="keyboard-top-row">
+                <div class="keyboard-label" style="margin-bottom:0;">MIDI KEYBOARD • 5 OCTAVES</div>
+                <label class="keyboard-channel-control">Internal KB Channel
+                    <select id="internalKbChannel">
+                        <option value="1">1 (A)</option>
+                        <option value="2">2 (B)</option>
+                        <option value="3" selected>3 (OSC)</option>
+                    </select>
+                </label>
+            </div>
             <div class="midi-keyboard" id="midiKeyboard"></div>
         </section>
 
@@ -981,6 +1018,7 @@
             const midiInputSelect = document.getElementById('midiInputSelect');
             const midiTargetSelect = document.getElementById('midiTargetSelect');
             const midiKeyboardEl = document.getElementById('midiKeyboard');
+            const internalKbChannelSelect = document.getElementById('internalKbChannel');
             const deckElements = Array.from(document.querySelectorAll('.sample-browser[data-deck]'));
             let samplerDecks = [];
 
@@ -1275,20 +1313,25 @@
                     key.addEventListener('pointerdown', (e) => {
                         const note = toNumber(key.dataset.note, -1);
                         if (note < 0) return;
+                        const channel = toNumber(internalKbChannelSelect?.value, 3);
                         key.setPointerCapture?.(e.pointerId);
-                        pointerNotes.set(e.pointerId, note);
-                        keyboardNoteOn(note, 110);
+                        pointerNotes.set(e.pointerId, { note, channel });
+                        routeMidiMessage(0x90 | ((channel - 1) & 0x0F), note, 110);
                     });
 
                     key.addEventListener('pointerup', (e) => {
-                        const note = pointerNotes.get(e.pointerId);
-                        if (note != null) keyboardNoteOff(note);
+                        const state = pointerNotes.get(e.pointerId);
+                        if (state && state.note != null) {
+                            routeMidiMessage(0x80 | (((state.channel || 3) - 1) & 0x0F), state.note, 0);
+                        }
                         pointerNotes.delete(e.pointerId);
                     });
 
                     key.addEventListener('pointercancel', (e) => {
-                        const note = pointerNotes.get(e.pointerId);
-                        if (note != null) keyboardNoteOff(note);
+                        const state = pointerNotes.get(e.pointerId);
+                        if (state && state.note != null) {
+                            routeMidiMessage(0x80 | (((state.channel || 3) - 1) & 0x0F), state.note, 0);
+                        }
                         pointerNotes.delete(e.pointerId);
                     });
 
@@ -1402,8 +1445,7 @@
                 midiInputSelect.disabled = !midiConfig.isEnabled;
             }
 
-            function onMIDIMessage(event) {
-                const [status, data1, data2] = event.data;
+            function routeMidiMessage(status, data1, data2 = 0) {
                 const type = status & 0xF0;
                 const channel = (status & 0x0F) + 1;
                 const target = resolveMidiTarget(channel);
@@ -1443,6 +1485,11 @@
                     if (target === 'OSC') keyboardNoteOff(data1);
                     updateMidiStatus(`MIDI Ch${channel}: NoteOff ${data1} -> ${target}`);
                 }
+            }
+
+            function onMIDIMessage(event) {
+                const [status, data1, data2] = event.data;
+                routeMidiMessage(status, data1, data2);
             }
 
             function refreshMidiInputs() {
