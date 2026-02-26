@@ -1863,6 +1863,21 @@
                 applyKnobToAudio(param, knobState[param]);
             }
 
+            function getModuleEnabled(moduleName) {
+                const modules = Array.from(document.querySelectorAll('.workspace .module'));
+                const target = modules.find((m) => {
+                    const label = m.querySelector('.module-header span');
+                    return (label?.textContent || '').trim().toLowerCase() === String(moduleName).toLowerCase();
+                });
+                if (!target) return true;
+                const led = target.querySelector('.module-header .led');
+                return led ? led.classList.contains('on') : true;
+            }
+
+            function getKnobValue(param, fallback = 0) {
+                return toNumber(knobState[param], fallback);
+            }
+
             // --- 1. Dual Sampler Decks (A/B) ---
             function createProceduralBuffer() {
                 if (!audioContext) return null;
@@ -2206,26 +2221,231 @@
                     Array.from(deck.activeMidiVoices.keys()).forEach((note) => releaseMidiNote(note));
                 }
 
-                function exportCurrentSliceToWav() {
+                async function exportCurrentSliceToWav() {
                     if (!deck.currentBuffer) {
                         updateMidiStatus(`Deck ${deck.name}: no sample loaded to export.`, true);
                         return;
                     }
 
-                    const sampleRate = deck.currentBuffer.sampleRate;
+                    const sourceRate = deck.currentBuffer.sampleRate;
                     const totalFrames = deck.currentBuffer.length;
                     const startFrame = Math.max(0, Math.floor(totalFrames * deck.regionStart));
                     const endFrame = Math.min(totalFrames, Math.ceil(totalFrames * deck.regionEnd));
                     const sliceLength = Math.max(1, endFrame - startFrame);
-                    const channels = deck.currentBuffer.numberOfChannels;
+                    const sourceChannels = deck.currentBuffer.numberOfChannels;
 
-                    const slicedChannels = [];
-                    for (let ch = 0; ch < channels; ch++) {
+                    // Offline render through same processing topology used in real-time playback.
+                    const offline = new OfflineAudioContext(2, sliceLength, sourceRate);
+                    const t0 = 0;
+
+                    const slicedBuffer = offline.createBuffer(sourceChannels, sliceLength, sourceRate);
+                    for (let ch = 0; ch < sourceChannels; ch++) {
                         const src = deck.currentBuffer.getChannelData(ch);
-                        slicedChannels.push(src.slice(startFrame, endFrame));
+                        slicedBuffer.copyToChannel(src.slice(startFrame, endFrame), ch);
                     }
 
-                    const wavBlob = encodeWavFromChannels(slicedChannels, sampleRate);
+                    // Distortion
+                    const distIn = offline.createGain();
+                    const distBypass = offline.createGain();
+                    const driveGain = offline.createGain();
+                    const shaper = offline.createWaveShaper();
+                    shaper.oversample = '4x';
+                    const toneFilter = offline.createBiquadFilter();
+                    toneFilter.type = 'lowpass';
+                    const distLevel = offline.createGain();
+                    const distOut = offline.createGain();
+
+                    // Delay
+                    const delayNode = offline.createDelay(1.2);
+                    const delayFeedback = offline.createGain();
+                    const delayFilter = offline.createBiquadFilter();
+                    delayFilter.type = 'lowpass';
+                    const delayWet = offline.createGain();
+
+                    // Reverb / Pre-Verb
+                    const preDelay = offline.createDelay(0.2);
+                    const modDelay = offline.createDelay(0.05);
+                    const modBypass = offline.createGain();
+                    const lfo = offline.createOscillator();
+                    const lfoGain = offline.createGain();
+                    const modDepth = offline.createGain();
+                    lfo.type = 'sine';
+                    lfo.connect(lfoGain);
+                    lfoGain.connect(modDepth);
+                    modDepth.connect(modDelay.delayTime);
+                    const convolver = offline.createConvolver();
+                    const lowCut = offline.createBiquadFilter();
+                    lowCut.type = 'highpass';
+                    const highCut = offline.createBiquadFilter();
+                    highCut.type = 'lowpass';
+                    const dryGain = offline.createGain();
+                    const wetGain = offline.createGain();
+
+                    // Dynamics
+                    const dynIn = offline.createGain();
+                    const dynBypass = offline.createGain();
+                    const compressor = offline.createDynamicsCompressor();
+                    compressor.knee.value = 24;
+                    compressor.attack.value = 0.006;
+                    compressor.release.value = 0.18;
+                    const makeupGain = offline.createGain();
+                    const dynOut = offline.createGain();
+
+                    // Master
+                    const masterGain = offline.createGain();
+
+                    // routing
+                    distIn.connect(driveGain);
+                    driveGain.connect(shaper);
+                    shaper.connect(toneFilter);
+                    toneFilter.connect(distLevel);
+                    distLevel.connect(distOut);
+                    distBypass.connect(distOut);
+
+                    distOut.connect(dryGain);
+
+                    distOut.connect(delayNode);
+                    delayNode.connect(delayFilter);
+                    delayFilter.connect(delayWet);
+                    delayFilter.connect(delayFeedback);
+                    delayFeedback.connect(delayNode);
+
+                    distOut.connect(preDelay);
+                    preDelay.connect(modDelay);
+                    preDelay.connect(modBypass);
+                    modDelay.connect(convolver);
+                    modBypass.connect(convolver);
+                    convolver.connect(lowCut);
+                    lowCut.connect(highCut);
+                    highCut.connect(wetGain);
+
+                    const sum = offline.createGain();
+                    dryGain.connect(sum);
+                    wetGain.connect(sum);
+                    delayWet.connect(sum);
+
+                    sum.connect(dynIn);
+                    dynIn.connect(compressor);
+                    compressor.connect(makeupGain);
+                    makeupGain.connect(dynOut);
+                    dynBypass.connect(dynOut);
+
+                    dynOut.connect(masterGain);
+                    masterGain.connect(offline.destination);
+
+                    const sourceNode = offline.createBufferSource();
+                    sourceNode.buffer = slicedBuffer;
+                    sourceNode.connect(distIn);
+                    sourceNode.connect(distBypass);
+
+                    // module states
+                    const distEnabled = getModuleEnabled('Distortion');
+                    const preVerbEnabled = getModuleEnabled('Pre-Verb');
+                    const delayEnabled = getModuleEnabled('Delay');
+                    const reverbEnabled = getModuleEnabled('Reverb');
+                    const dynamicsEnabled = getModuleEnabled('Dynamics');
+
+                    distIn.gain.setValueAtTime(distEnabled ? 1 : 0, t0);
+                    distBypass.gain.setValueAtTime(distEnabled ? 0 : 1, t0);
+                    dynIn.gain.setValueAtTime(dynamicsEnabled ? 1 : 0, t0);
+                    dynBypass.gain.setValueAtTime(dynamicsEnabled ? 0 : 1, t0);
+
+                    // knobs to params
+                    const drive = getKnobValue('Drive', 65);
+                    const tone = getKnobValue('Tone', 40);
+                    const level = getKnobValue('Level', 80);
+                    const size = getKnobValue('Size', 30);
+                    const diff = getKnobValue('Diff', 75);
+                    const mod = getKnobValue('Mod', 20);
+                    const decay = getKnobValue('Decay', 85);
+                    const low = getKnobValue('Low Cut', 50);
+                    const high = getKnobValue('High Cut', 60);
+                    const dTime = getKnobValue('Time', 35);
+                    const dFeedback = getKnobValue('Feedback', 40);
+                    const dMix = getKnobValue('Mix', 25);
+                    const thresh = getKnobValue('Thresh', 0);
+                    const ratio = getKnobValue('Ratio', 4);
+                    const makeup = getKnobValue('Gain', 9);
+                    const master = getKnobValue('Master', 90);
+
+                    const distNorm = clamp(drive / 100, 0, 1);
+                    driveGain.gain.setValueAtTime(1 + distNorm * 19, t0);
+                    shaper.curve = makeDistortionCurve(distNorm);
+
+                    const toneNorm = clamp(tone / 100, 0, 1);
+                    const toneHz = 500 * Math.pow(24, toneNorm);
+                    toneFilter.frequency.setValueAtTime(toneHz, t0);
+                    toneFilter.Q.setValueAtTime(0.5 + toneNorm * 1.5, t0);
+                    distLevel.gain.setValueAtTime(clamp(level / 100, 0, 1) * 1.6, t0);
+
+                    const delayTimeNorm = clamp(dTime / 100, 0, 1);
+                    delayNode.delayTime.setValueAtTime(0.03 + delayTimeNorm * 0.87, t0);
+                    delayFeedback.gain.setValueAtTime(delayEnabled ? clamp(dFeedback / 100, 0, 1) * 0.92 : 0, t0);
+                    delayFilter.frequency.setValueAtTime(6800, t0);
+                    delayWet.gain.setValueAtTime(delayEnabled ? clamp(dMix / 100, 0, 1) * 0.8 : 0, t0);
+
+                    const sizeNorm = clamp(size / 100, 0, 1);
+                    preDelay.delayTime.setValueAtTime(preVerbEnabled ? sizeNorm * 0.06 : 0, t0);
+
+                    const modNorm = preVerbEnabled ? clamp(mod / 100, 0, 1) : 0;
+                    lfo.frequency.setValueAtTime(0.2 + modNorm * 2.0, t0);
+                    lfoGain.gain.setValueAtTime(1.0, t0);
+                    modDepth.gain.setValueAtTime(modNorm * 0.008, t0);
+                    modDelay.delayTime.setValueAtTime(0.010, t0);
+                    modBypass.gain.setValueAtTime(preVerbEnabled ? 0 : 1, t0);
+                    lfo.start(0);
+
+                    const wet = clamp(0.10 + sizeNorm * 0.75, 0.10, 0.90);
+                    const dry = clamp(1.0 - wet * 0.65, 0.15, 1.0);
+                    dryGain.gain.setValueAtTime(dry, t0);
+                    wetGain.gain.setValueAtTime(reverbEnabled ? wet : 0, t0);
+
+                    const lowNorm = clamp(low / 100, 0, 1);
+                    lowCut.frequency.setValueAtTime(20 * Math.pow(40, lowNorm), t0);
+                    lowCut.Q.setValueAtTime(0.7, t0);
+
+                    const highNorm = clamp(high / 100, 0, 1);
+                    highCut.frequency.setValueAtTime(16000 * Math.pow(0.0625, 1 - highNorm), t0);
+                    highCut.Q.setValueAtTime(0.7, t0);
+
+                    const thr = -60 + (clamp(thresh / 100, 0, 1) * 60);
+                    compressor.threshold.setValueAtTime(thr, t0);
+                    compressor.ratio.setValueAtTime(clamp(ratio, 1, 20), t0);
+                    makeupGain.gain.setValueAtTime(dbToGain(clamp(makeup, 0, 24)), t0);
+                    masterGain.gain.setValueAtTime(Math.pow(clamp(master / 100, 0, 1), 1.6), t0);
+
+                    if (reverbEnabled) {
+                        const decayNorm = clamp(decay / 100, 0, 1);
+                        const diffNorm = clamp(diff / 100, 0, 1);
+                        const seconds = clamp(0.35 + sizeNorm * 1.1 + decayNorm * 7.0, 0.35, 10.0);
+                        const irLen = Math.max(1, Math.floor(sourceRate * seconds));
+                        const ir = offline.createBuffer(2, irLen, sourceRate);
+                        const diffExp = 0.8 + diffNorm * 3.2;
+                        for (let ch = 0; ch < 2; ch++) {
+                            const data = ir.getChannelData(ch);
+                            for (let i = 0; i < irLen; i++) {
+                                const tt = i / irLen;
+                                const env = Math.pow(1 - tt, diffExp);
+                                data[i] = (Math.random() * 2 - 1) * env;
+                            }
+                        }
+                        convolver.buffer = ir;
+                    } else {
+                        const pass = offline.createBuffer(2, 1, sourceRate);
+                        pass.getChannelData(0)[0] = 1;
+                        pass.getChannelData(1)[0] = 1;
+                        convolver.buffer = pass;
+                    }
+
+                    sourceNode.start(0, 0, slicedBuffer.duration);
+                    const rendered = await offline.startRendering();
+
+                    const renderedChannels = [];
+                    for (let ch = 0; ch < rendered.numberOfChannels; ch++) {
+                        renderedChannels.push(rendered.getChannelData(ch).slice());
+                    }
+
+                    const wavBlob = encodeWavFromChannels(renderedChannels, rendered.sampleRate);
                     const url = URL.createObjectURL(wavBlob);
                     const a = document.createElement('a');
                     const deckName = String(deck.name || 'Deck').toUpperCase();
@@ -2236,7 +2456,7 @@
                     a.remove();
                     setTimeout(() => URL.revokeObjectURL(url), 1000);
 
-                    updateMidiStatus(`Deck ${deckName}: exported ${sliceLength} frames as WAV.`);
+                    updateMidiStatus(`Deck ${deckName}: exported processed slice as WAV.`);
                 }
 
                 if (deck.importBtn && deck.fileInput) {
