@@ -1044,6 +1044,13 @@
             const knobState = Object.create(null);
             let reverbRegenTimer = null;
             let isMasterBypassed = false;
+            const moduleModeState = {
+                distortion: 'fuzz',
+                preverb: 'kill',
+                delay: 'digital',
+                reverb: 'plate',
+                dynamics: 'comp'
+            };
 
             const midiBtn = document.getElementById('midiBtn');
             const midiStatus = document.getElementById('midiStatus');
@@ -1682,6 +1689,7 @@
                 delayWet.gain.value = 0.18;
 
                 // Reverb stage (with predelay + optional modulation)
+                const preVerbSendGain = audioContext.createGain();
                 const preDelay = audioContext.createDelay(0.2); // up to 200ms
                 const modDelay = audioContext.createDelay(0.05); // subtle modulation
                 const modDepth = audioContext.createGain(); // scales LFO
@@ -1738,7 +1746,8 @@
                 delayFeedback.connect(delayNode);
 
                 // wet path: predelay -> modDelay -> convolver -> EQ -> wetGain
-                distLevel.connect(preDelay);
+                distLevel.connect(preVerbSendGain);
+                preVerbSendGain.connect(preDelay);
                 preDelay.connect(modDelay);
                 modDelay.connect(convolver);
                 convolver.connect(lowCut);
@@ -1764,7 +1773,7 @@
                         fxPathGain, cleanBypassGain,
                         driveGain, shaper, toneFilter, distLevel,
                         delayNode, delayFeedback, delayFilter, delayWet,
-                        preDelay, modDelay, modDepth, lfo, lfoGain,
+                        preVerbSendGain, preDelay, modDelay, modDepth, lfo, lfoGain,
                         convolver, lowCut, highCut,
                         dryGain, wetGain,
                         compressor, makeupGain, masterGain,
@@ -1774,6 +1783,7 @@
 
                 // Initialize node params from current knob positions
                 applyAllKnobsToAudio();
+                applyModuleModesToAudio();
                 applyMasterBypassAudioState();
 
                 // Build initial impulse response
@@ -1847,10 +1857,23 @@
                 const decayNorm = clamp(decay / 100, 0, 1);
                 const diffNorm = clamp(diff / 100, 0, 1);
 
-                // IR length: small rooms shorter, bigger rooms longer; decay dominates tail
-                const seconds = clamp(0.35 + sizeNorm * 1.1 + decayNorm * 7.0, 0.35, 10.0);
+                const preverbMode = moduleModeState.preverb;
+                const reverbMode = moduleModeState.reverb;
 
-                const ir = createImpulseResponse({ seconds, diffusion: diffNorm });
+                // IR length/mood changes by mode.
+                let seconds = clamp(0.35 + sizeNorm * 1.1 + decayNorm * 7.0, 0.35, 10.0);
+                let diffusion = diffNorm;
+
+                if (preverbMode === 'freeze') {
+                    seconds = 12.0;
+                    diffusion = 0.98;
+                }
+                if (reverbMode === 'plate') {
+                    seconds = clamp(seconds * 0.78, 0.35, 8.0);
+                    diffusion = clamp(diffusion * 0.85, 0, 1);
+                }
+
+                const ir = createImpulseResponse({ seconds, diffusion });
                 fx.nodes.convolver.buffer = ir;
             }
 
@@ -1859,6 +1882,7 @@
                 if (!audioContext) return;
                 ensureFxGraph();
                 Object.keys(knobState).forEach((p) => applyKnobToAudio(p, knobState[p]));
+                applyModuleModesToAudio();
             }
 
             function applyKnobToAudio(param, value) {
@@ -1871,9 +1895,11 @@
                     // --- Distortion ---
                     case 'Drive': {
                         const norm = clamp(v / 100, 0, 1);
-                        // Pre gain 1..20
-                        n.driveGain.gain.setTargetAtTime(1 + norm * 19, t, 0.01);
-                        n.shaper.curve = makeDistortionCurve(norm);
+                        const crunch = moduleModeState.distortion === 'crunch';
+                        const driveScale = crunch ? 10 : 19;
+                        const curveAmt = crunch ? norm * 0.55 : norm;
+                        n.driveGain.gain.setTargetAtTime(1 + curveAmt * driveScale, t, 0.01);
+                        n.shaper.curve = makeDistortionCurve(curveAmt);
                         break;
                     }
                     case 'Tone': {
@@ -1900,12 +1926,14 @@
                     }
                     case 'Feedback': {
                         const norm = clamp(v / 100, 0, 1);
-                        n.delayFeedback.gain.setTargetAtTime(norm * 0.92, t, 0.02);
+                        const isTape = moduleModeState.delay === 'tape';
+                        n.delayFeedback.gain.setTargetAtTime(norm * (isTape ? 0.75 : 0.92), t, 0.02);
                         break;
                     }
                     case 'Mix': {
                         const norm = clamp(v / 100, 0, 1);
-                        n.delayWet.gain.setTargetAtTime(norm * 0.8, t, 0.02);
+                        const isTape = moduleModeState.delay === 'tape';
+                        n.delayWet.gain.setTargetAtTime(norm * (isTape ? 0.62 : 0.8), t, 0.02);
                         break;
                     }
 
@@ -1916,8 +1944,10 @@
                         n.preDelay.delayTime.setTargetAtTime(norm * 0.06, t, 0.01);
 
                         // Wet/dry derived from size (bigger room => more wet)
-                        const wet = clamp(0.10 + norm * 0.75, 0.10, 0.90);
-                        const dry = clamp(1.0 - wet * 0.65, 0.15, 1.0);
+                        let wet = clamp(0.10 + norm * 0.75, 0.10, 0.90);
+                        let dry = clamp(1.0 - wet * 0.65, 0.15, 1.0);
+                        if (moduleModeState.preverb === 'kill') { wet = 0.0; dry = 1.0; }
+                        if (moduleModeState.preverb === 'freeze') { wet = Math.max(wet, 0.92); dry = Math.min(dry, 0.22); }
                         n.wetGain.gain.setTargetAtTime(wet, t, 0.02);
                         n.dryGain.gain.setTargetAtTime(dry, t, 0.02);
 
@@ -1937,7 +1967,7 @@
                         const norm = clamp(v / 100, 0, 1);
                         // LFO rate 0.2..2.2 Hz, depth 0..8ms
                         const rate = 0.2 + norm * 2.0;
-                        const depth = norm * 0.008; // seconds
+                        const depth = moduleModeState.preverb === 'freeze' ? Math.max(norm * 0.008, 0.004) : norm * 0.008; // seconds
                         n.lfo.frequency.setTargetAtTime(rate, t, 0.02);
                         n.lfoGain.gain.setTargetAtTime(1.0, t, 0.02);
                         // Base delay follows a bit of size, but keep subtle
@@ -1956,7 +1986,8 @@
                     case 'High Cut': {
                         // 1000..16000 Hz
                         const norm = clamp(v / 100, 0, 1);
-                        const fc = 16000 * Math.pow(0.0625, 1 - norm); // ~1000..16000
+                        let fc = 16000 * Math.pow(0.0625, 1 - norm); // ~1000..16000
+                        if (moduleModeState.reverb === 'plate') fc *= 0.72;
                         n.highCut.frequency.setTargetAtTime(fc, t, 0.02);
                         n.highCut.Q.setTargetAtTime(0.7, t, 0.02);
                         break;
@@ -1971,7 +2002,8 @@
                     }
                     case 'Ratio': {
                         // knob min 1 max 20 => 1..20
-                        n.compressor.ratio.setTargetAtTime(clamp(v, 1, 20), t, 0.02);
+                        const lim = moduleModeState.dynamics === 'limiter';
+                        n.compressor.ratio.setTargetAtTime(lim ? clamp(10 + v * 2, 12, 20) : clamp(v, 1, 20), t, 0.02);
                         break;
                     }
                     case 'Gain': {
@@ -2015,6 +2047,71 @@
             function getKnobValue(param, fallback = 0) {
                 return toNumber(knobState[param], fallback);
             }
+
+            function applyModuleModesToAudio() {
+                if (!audioContext || !fx) return;
+                const t = audioContext.currentTime;
+                const n = fx.nodes;
+
+                const preverbMode = moduleModeState.preverb;
+                n.preVerbSendGain.gain.setTargetAtTime(preverbMode === 'kill' ? 0 : (preverbMode === 'freeze' ? 1.25 : 1), t, 0.02);
+
+                const tape = moduleModeState.delay === 'tape';
+                n.delayFilter.frequency.setTargetAtTime(tape ? 2400 : 6800, t, 0.03);
+
+                const lim = moduleModeState.dynamics === 'limiter';
+                n.compressor.attack.setTargetAtTime(lim ? 0.001 : 0.006, t, 0.02);
+                n.compressor.release.setTargetAtTime(lim ? 0.08 : 0.18, t, 0.02);
+                n.compressor.knee.setTargetAtTime(lim ? 3 : 24, t, 0.02);
+
+                scheduleReverbRegen();
+            }
+
+            function initModuleModeButtons() {
+                const mapping = {
+                    distortion: ['fuzz', 'crunch'],
+                    preverb: ['kill', 'freeze'],
+                    delay: ['digital', 'tape'],
+                    reverb: ['hall', 'plate'],
+                    dynamics: ['comp', 'limiter']
+                };
+
+                document.querySelectorAll('.workspace .module').forEach((moduleEl) => {
+                    const header = moduleEl.querySelector('.module-header span');
+                    const modeRow = moduleEl.querySelector('.btn-row');
+                    if (!header || !modeRow) return;
+                    const moduleName = header.textContent.trim().toLowerCase().replace(/[-\s]+/g, '');
+                    const modes = mapping[moduleName];
+                    if (!modes) return;
+
+                    const buttons = Array.from(modeRow.querySelectorAll('.btn'));
+                    buttons.forEach((btn, idx) => {
+                        const mode = modes[idx] || btn.textContent.trim().toLowerCase();
+                        btn.dataset.mode = mode;
+                        const isActive = moduleModeState[moduleName] === mode;
+                        btn.classList.toggle('active', isActive);
+                        btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+
+                        btn.addEventListener('click', () => {
+                            if (moduleModeState[moduleName] === mode) return;
+                            moduleModeState[moduleName] = mode;
+                            buttons.forEach((b) => {
+                                const selected = b.dataset.mode === mode;
+                                b.classList.toggle('active', selected);
+                                b.setAttribute('aria-pressed', selected ? 'true' : 'false');
+                            });
+
+                            if (audioContext) {
+                                ensureFxGraph();
+                                applyModuleModesToAudio();
+                                applyAllKnobsToAudio();
+                            }
+                        });
+                    });
+                });
+            }
+
+            initModuleModeButtons();
 
             // --- 1. Dual Sampler Decks (A/B) ---
             function createProceduralBuffer() {
