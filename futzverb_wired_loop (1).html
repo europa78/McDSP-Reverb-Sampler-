@@ -403,7 +403,8 @@
         }
 
         .sb-import-btn,
-        .sb-export-btn {
+        .sb-export-btn,
+        .sb-mute-btn {
             background: transparent;
             border: 1px solid #444;
             color: #666;
@@ -413,11 +414,20 @@
             transition: color 0.2s, border-color 0.2s;
         }
         .sb-import-btn:hover,
-        .sb-export-btn:hover {
+        .sb-export-btn:hover,
+        .sb-mute-btn:hover {
             color: var(--accent-green);
             border-color: var(--accent-green);
         }
 
+
+
+        .sb-mute-btn.active {
+            color: #000;
+            background: var(--accent-red);
+            border-color: var(--accent-red);
+            box-shadow: 0 0 5px rgba(248, 113, 113, 0.45);
+        }
         .sb-list {
             list-style: none;
             padding: 0;
@@ -918,6 +928,7 @@
                                 <button class="sb-transport-btn" data-role="loop" title="Loop" aria-pressed="false">&#8734;</button>
                                 <button class="sb-import-btn" data-role="import">IMPORT</button>
                                 <button class="sb-export-btn" data-role="export">EXPORT</button>
+                                <button class="sb-mute-btn" data-role="mute">Mute A</button>
                                 <label class="sb-volume">VOL <input type="range" data-role="deck-volume" min="0" max="100" value="100" /><span class="sb-volume-value" data-role="deck-volume-value">100</span></label>
                             </div>
                         </div>
@@ -949,6 +960,7 @@
                                 <button class="sb-transport-btn" data-role="loop" title="Loop" aria-pressed="false">&#8734;</button>
                                 <button class="sb-import-btn" data-role="import">IMPORT</button>
                                 <button class="sb-export-btn" data-role="export">EXPORT</button>
+                                <button class="sb-mute-btn" data-role="mute">Mute B</button>
                                 <label class="sb-volume">VOL <input type="range" data-role="deck-volume" min="0" max="100" value="100" /><span class="sb-volume-value" data-role="deck-volume-value">100</span></label>
                             </div>
                         </div>
@@ -1316,13 +1328,23 @@
                         const channel = toNumber(internalKbChannelSelect?.value, 3);
                         key.setPointerCapture?.(e.pointerId);
                         pointerNotes.set(e.pointerId, { note, channel });
-                        routeMidiMessage(0x90 | ((channel - 1) & 0x0F), note, 110);
+
+                        // Internal keyboard is also a sync trigger: start A+B together.
+                        startSyncedDecksFromInternal(note, 110);
+
+                        // Keep existing OSC behavior on channel 3 through the main MIDI router.
+                        if (channel === 3) {
+                            routeMidiMessage(0x90 | ((channel - 1) & 0x0F), note, 110);
+                        }
                     });
 
                     key.addEventListener('pointerup', (e) => {
                         const state = pointerNotes.get(e.pointerId);
                         if (state && state.note != null) {
-                            routeMidiMessage(0x80 | (((state.channel || 3) - 1) & 0x0F), state.note, 0);
+                            stopSyncedDecksFromInternal(state.note);
+                            if ((state.channel || 3) === 3) {
+                                routeMidiMessage(0x80 | (((state.channel || 3) - 1) & 0x0F), state.note, 0);
+                            }
                         }
                         pointerNotes.delete(e.pointerId);
                     });
@@ -1330,7 +1352,10 @@
                     key.addEventListener('pointercancel', (e) => {
                         const state = pointerNotes.get(e.pointerId);
                         if (state && state.note != null) {
-                            routeMidiMessage(0x80 | (((state.channel || 3) - 1) & 0x0F), state.note, 0);
+                            stopSyncedDecksFromInternal(state.note);
+                            if ((state.channel || 3) === 3) {
+                                routeMidiMessage(0x80 | (((state.channel || 3) - 1) & 0x0F), state.note, 0);
+                            }
                         }
                         pointerNotes.delete(e.pointerId);
                     });
@@ -1997,6 +2022,7 @@
                 const loopBtn = root.querySelector('[data-role="loop"]');
                 const importBtn = root.querySelector('[data-role="import"]');
                 const exportBtn = root.querySelector('[data-role="export"]');
+                const muteBtn = root.querySelector('[data-role="mute"]');
                 const fileInput = root.querySelector('[data-role="audio-input"]');
                 const sampleList = root.querySelector('[data-role="sample-list"]');
                 const volumeSlider = root.querySelector('[data-role="deck-volume"]');
@@ -2013,6 +2039,7 @@
                     loopBtn,
                     importBtn,
                     exportBtn,
+                    muteBtn,
                     fileInput,
                     sampleList,
                     volumeSlider,
@@ -2020,6 +2047,7 @@
                     currentBuffer: null,
                     sampleGain: null,
                     level: 1.0,
+                    muted: false,
                     sourceNode: null,
                     activeMidiVoices: new Map(),
                     isPlaying: false,
@@ -2037,14 +2065,32 @@
                     deck.loopBtn.title = deck.isLooping ? 'Loop: On' : 'Loop: Off';
                 }
 
+                function getDeckOutputGain() {
+                    return deck.muted ? 0 : deck.level;
+                }
+
                 function ensureDeckGain() {
                     if (!audioContext || !fx) return null;
                     if (!deck.sampleGain) {
                         deck.sampleGain = audioContext.createGain();
                         deck.sampleGain.connect(fx.input);
                     }
-                    deck.sampleGain.gain.setTargetAtTime(deck.level, audioContext.currentTime, 0.01);
+                    deck.sampleGain.gain.setTargetAtTime(getDeckOutputGain(), audioContext.currentTime, 0.01);
                     return deck.sampleGain;
+                }
+
+                function updateDeckMuteUI() {
+                    if (!deck.muteBtn) return;
+                    deck.muteBtn.classList.toggle('active', deck.muted);
+                    deck.muteBtn.textContent = `${deck.muted ? 'Unmute' : 'Mute'} ${deck.name}`;
+                }
+
+                function setDeckMuted(isMuted) {
+                    deck.muted = !!isMuted;
+                    updateDeckMuteUI();
+                    if (audioContext && deck.sampleGain) {
+                        deck.sampleGain.gain.setTargetAtTime(getDeckOutputGain(), audioContext.currentTime, 0.01);
+                    }
                 }
 
                 function updateDeckVolume(value) {
@@ -2053,7 +2099,7 @@
                     if (deck.volumeSlider) deck.volumeSlider.value = String(Math.round(norm * 100));
                     if (deck.volumeValue) deck.volumeValue.textContent = String(Math.round(norm * 100));
                     if (audioContext && deck.sampleGain) {
-                        deck.sampleGain.gain.setTargetAtTime(norm, audioContext.currentTime, 0.02);
+                        deck.sampleGain.gain.setTargetAtTime(getDeckOutputGain(), audioContext.currentTime, 0.02);
                     }
                 }
 
@@ -2203,7 +2249,7 @@
                     }
                 }
 
-                function triggerMidiNote(note, velocity = 127, rootNote = 60) {
+                function triggerMidiNote(note, velocity = 127, rootNote = 60, options = {}) {
                     initAudioContext();
                     ensureFxGraph();
 
@@ -2235,7 +2281,8 @@
                     src.loop = true;
                     src.loopStart = offset;
                     src.loopEnd = offset + duration;
-                    src.start(0, offset);
+                    const startAt = Number.isFinite(options.startTime) ? options.startTime : 0;
+                    src.start(startAt, offset);
 
                     const voices = deck.activeMidiVoices.get(note) || [];
                     const voice = { src, voiceGain };
@@ -2550,11 +2597,13 @@
                 });
 
                 deck.exportBtn?.addEventListener('click', exportCurrentSliceToWav);
+                deck.muteBtn?.addEventListener('click', () => setDeckMuted(!deck.muted));
 
                 deck.volumeSlider?.addEventListener('input', (e) => {
                     updateDeckVolume(e.target.value);
                 });
                 updateDeckVolume(deck.volumeSlider?.value ?? 100);
+                updateDeckMuteUI();
 
                 deck.sampleList?.querySelectorAll('li').forEach((item) => {
                     item.addEventListener('click', () => {
@@ -2616,6 +2665,7 @@
                     triggerMidiNote,
                     releaseMidiNote,
                     panicMidiNotes,
+                    setDeckMuted,
                     toggleLoop: () => {
                         deck.isLooping = !deck.isLooping;
                         updateLoopButtonUI();
@@ -2625,6 +2675,20 @@
             }
 
             samplerDecks = deckElements.map((root, index) => createSamplerDeck(root, index));
+
+            function startSyncedDecksFromInternal(note, velocity = 110) {
+                initAudioContext();
+                ensureFxGraph();
+                if (!audioContext) return;
+                const t0 = audioContext.currentTime + 0.03;
+                samplerDecks[0]?.triggerMidiNote?.(note, velocity, midiConfig.rootNote, { startTime: t0 });
+                samplerDecks[1]?.triggerMidiNote?.(note, velocity, midiConfig.rootNote, { startTime: t0 });
+            }
+
+            function stopSyncedDecksFromInternal(note) {
+                samplerDecks[0]?.releaseMidiNote?.(note);
+                samplerDecks[1]?.releaseMidiNote?.(note);
+            }
 
             // Keyboard shortcut: L toggles loop on deck A.
             window.addEventListener('keydown', (e) => {
