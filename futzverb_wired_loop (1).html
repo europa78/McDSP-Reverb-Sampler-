@@ -550,6 +550,26 @@
             color: var(--accent-blue);
         }
 
+        .master-bypass-btn {
+            margin-top: 6px;
+            width: 74px;
+            padding: 5px 6px;
+            font-size: 0.58rem;
+            border: 1px solid #444;
+            border-radius: 4px;
+            background: #2b2b30;
+            color: #ddd;
+            cursor: pointer;
+            font-family: var(--font-tech);
+        }
+
+        .master-bypass-btn.active {
+            background: var(--accent-red);
+            color: #000;
+            border-color: var(--accent-red);
+            box-shadow: 0 0 6px rgba(248, 113, 113, 0.45);
+        }
+
         .midi-map {
             font-family: var(--font-tech);
             font-size: 0.55rem;
@@ -718,10 +738,10 @@
                 <div class="bar" style="animation-delay: 0.4s"></div>
             </div>
 
-            <div style="text-align: right; font-family: var(--font-tech); font-size: 0.7rem; color: var(--text-muted);">
-                <div>BYPASS</div>
-                <div class="led led-orange on" style="margin: 5px auto;"></div>
-                <div>ON</div>
+            <div style="text-align: right; font-family: var(--font-tech); font-size: 0.7rem; color: var(--text-muted); display:flex; flex-direction:column; align-items:center;">
+                <div>MASTER FX</div>
+                <div class="led led-orange on" id="masterBypassLed" style="margin: 5px auto;"></div>
+                <button class="master-bypass-btn" id="masterBypassBtn" aria-pressed="false">FX ON</button>
             </div>
         </section>
 
@@ -1023,10 +1043,13 @@
             let fx = null; // { input, output, nodes... }
             const knobState = Object.create(null);
             let reverbRegenTimer = null;
+            let isMasterBypassed = false;
 
             const midiBtn = document.getElementById('midiBtn');
             const midiStatus = document.getElementById('midiStatus');
             const midiMapPreview = document.getElementById('midiMapPreview');
+            const masterBypassBtn = document.getElementById('masterBypassBtn');
+            const masterBypassLed = document.getElementById('masterBypassLed');
             const midiInputSelect = document.getElementById('midiInputSelect');
             const midiTargetSelect = document.getElementById('midiTargetSelect');
             const midiKeyboardEl = document.getElementById('midiKeyboard');
@@ -1584,6 +1607,40 @@
             populateMidiInputSelect();
             setupMidiMapPreview();
 
+            function applyMasterBypassVisualState() {
+                if (masterBypassBtn) {
+                    masterBypassBtn.classList.toggle('active', isMasterBypassed);
+                    masterBypassBtn.textContent = isMasterBypassed ? 'BYPASSED' : 'FX ON';
+                    masterBypassBtn.setAttribute('aria-pressed', String(isMasterBypassed));
+                }
+                if (masterBypassLed) {
+                    masterBypassLed.classList.toggle('on', !isMasterBypassed);
+                }
+                document.querySelectorAll('.workspace .module .module-header .led').forEach((led) => {
+                    led.classList.toggle('on', !isMasterBypassed);
+                });
+            }
+
+            function applyMasterBypassAudioState() {
+                if (!audioContext || !fx) return;
+                const t = audioContext.currentTime;
+                const n = fx.nodes;
+                // FX path bypass for all five modules; master volume remains active.
+                n.fxPathGain.gain.setTargetAtTime(isMasterBypassed ? 0 : 1, t, 0.01);
+                n.cleanBypassGain.gain.setTargetAtTime(isMasterBypassed ? 1 : 0, t, 0.01);
+            }
+
+            function setMasterBypass(nextState) {
+                isMasterBypassed = !!nextState;
+                applyMasterBypassVisualState();
+                applyMasterBypassAudioState();
+            }
+
+            if (masterBypassBtn) {
+                masterBypassBtn.addEventListener('click', () => setMasterBypass(!isMasterBypassed));
+            }
+            applyMasterBypassVisualState();
+
             // --- Helper: Init Audio Context ---
             const initAudioContext = () => {
                 if (!audioContext) {
@@ -1602,6 +1659,8 @@
 
                 // Core nodes
                 const input = audioContext.createGain();
+                const fxPathGain = audioContext.createGain();
+                const cleanBypassGain = audioContext.createGain();
 
                 // Distortion stage
                 const driveGain = audioContext.createGain();
@@ -1658,8 +1717,12 @@
                 const masterGain = audioContext.createGain();
 
                 // Wire it up:
-                // input -> drive -> shaper -> tone -> level -> split dry + wet
-                input.connect(driveGain);
+                // input -> (fx path + clean bypass)
+                input.connect(fxPathGain);
+                input.connect(cleanBypassGain);
+
+                // fx path -> drive -> shaper -> tone -> level -> split dry + wet
+                fxPathGain.connect(driveGain);
                 driveGain.connect(shaper);
                 shaper.connect(toneFilter);
                 toneFilter.connect(distLevel);
@@ -1691,12 +1754,14 @@
                 sum.connect(compressor);
                 compressor.connect(makeupGain);
                 makeupGain.connect(masterGain);
+                cleanBypassGain.connect(masterGain);
                 masterGain.connect(audioContext.destination);
 
                 fx = {
                     input,
                     output: masterGain,
                     nodes: {
+                        fxPathGain, cleanBypassGain,
                         driveGain, shaper, toneFilter, distLevel,
                         delayNode, delayFeedback, delayFilter, delayWet,
                         preDelay, modDelay, modDepth, lfo, lfoGain,
@@ -1709,6 +1774,7 @@
 
                 // Initialize node params from current knob positions
                 applyAllKnobsToAudio();
+                applyMasterBypassAudioState();
 
                 // Build initial impulse response
                 scheduleReverbRegen(true);
