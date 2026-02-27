@@ -1043,6 +1043,7 @@
             let fx = null; // { input, output, nodes... }
             const knobState = Object.create(null);
             let reverbRegenTimer = null;
+            let hasLoggedReverbSanity = false;
             let isMasterBypassed = false;
             const moduleModeState = {
                 distortion: 'fuzz',
@@ -1831,6 +1832,18 @@
                 return ir;
             }
 
+            function logReverbSanityOnce() {
+                if (hasLoggedReverbSanity || !audioContext || !fx) return;
+                hasLoggedReverbSanity = true;
+                const n = fx.nodes;
+                console.info('[Reverb sanity]', {
+                    nodeExists: !!n.convolver,
+                    mode: moduleModeState.reverb,
+                    wet: Number.isFinite(n.wetGain?.gain?.value) ? Number(n.wetGain.gain.value.toFixed(3)) : null,
+                    bufferSet: !!n.convolver?.buffer
+                });
+            }
+
             function scheduleReverbRegen(force = false) {
                 if (!audioContext || !fx) return;
                 if (force) {
@@ -1879,6 +1892,7 @@
 
                 const ir = createImpulseResponse({ seconds, diffusion });
                 fx.nodes.convolver.buffer = ir;
+                logReverbSanityOnce();
             }
 
             function applyAllKnobsToAudio() {
@@ -1944,22 +1958,36 @@
                     // --- Reverb ---
                     case 'Size': {
                         const norm = clamp(v / 100, 0, 1);
-                        // predelay 0..60ms
-                        n.preDelay.delayTime.setTargetAtTime(norm * 0.06, t, 0.01);
-
-                        // Wet/dry derived from size + pre-verb mode
+                        const reverbMode = moduleModeState.reverb;
                         const preverbMode = moduleModeState.preverb;
-                        let wet = clamp(0.10 + norm * 0.75, 0.10, 0.90);
-                        let dry = clamp(1.0 - wet * 0.65, 0.15, 1.0);
-                        if (preverbMode === 'kill') {
-                            wet = clamp(wet * 0.45, 0.08, 0.42);
-                            dry = clamp(1.0 - wet * 0.35, 0.65, 1.0);
-                        }
-                        if (preverbMode === 'freeze') { wet = Math.max(wet, 0.92); dry = Math.min(dry, 0.22); }
-                        n.wetGain.gain.setTargetAtTime(wet, t, 0.02);
-                        n.dryGain.gain.setTargetAtTime(dry, t, 0.02);
+                        const reverbEnabled = getModuleEnabled('Reverb');
 
-                        // Size influences IR too
+                        // Hall has longer predelay and larger image; plate is tighter/earlier.
+                        const preDelaySeconds = reverbMode === 'plate'
+                            ? (0.004 + norm * 0.016)
+                            : (0.012 + norm * 0.048);
+                        n.preDelay.delayTime.setTargetAtTime(preDelaySeconds, t, 0.015);
+
+                        let wet = reverbMode === 'plate'
+                            ? clamp(0.08 + norm * 0.50, 0.08, 0.70)
+                            : clamp(0.14 + norm * 0.72, 0.14, 0.92);
+                        let dry = clamp(1.0 - wet * 0.60, 0.20, 1.0);
+
+                        if (preverbMode === 'kill') {
+                            wet = clamp(wet * 0.45, 0.06, 0.40);
+                            dry = clamp(1.0 - wet * 0.30, 0.72, 1.0);
+                        }
+                        if (preverbMode === 'freeze') {
+                            wet = Math.max(wet, 0.92);
+                            dry = Math.min(dry, 0.22);
+                        }
+                        if (!reverbEnabled) {
+                            wet = 0;
+                            dry = 1;
+                        }
+
+                        n.wetGain.gain.setTargetAtTime(wet, t, 0.03);
+                        n.dryGain.gain.setTargetAtTime(dry, t, 0.03);
                         scheduleReverbRegen();
                         break;
                     }
@@ -2088,8 +2116,11 @@
                 n.compressor.knee.setTargetAtTime(lim ? 3 : 24, t, 0.02);
 
                 const plate = moduleModeState.reverb === 'plate';
-                n.preDelay.delayTime.setTargetAtTime(plate ? 0.006 : 0.02, t, 0.03);
+                n.preDelay.delayTime.setTargetAtTime(plate ? 0.008 : 0.024, t, 0.03);
+                n.lowCut.frequency.setTargetAtTime(plate ? 120 : 70, t, 0.03);
+                n.highCut.frequency.setTargetAtTime(plate ? 7600 : 10500, t, 0.03);
 
+                applyKnobToAudio('Size', getKnobValue('Size', 30));
                 scheduleReverbRegen();
             }
 
@@ -2629,6 +2660,7 @@
                     const distEnabled = getModuleEnabled('Distortion');
                     const preVerbEnabled = getModuleEnabled('Pre-Verb');
                     const preverbMode = moduleModeState.preverb;
+                    const reverbMode = moduleModeState.reverb;
                     const delayEnabled = getModuleEnabled('Delay');
                     const reverbEnabled = getModuleEnabled('Reverb');
                     const dynamicsEnabled = getModuleEnabled('Dynamics');
@@ -2686,11 +2718,13 @@
                     modBypass.gain.setValueAtTime(preVerbOn ? 0 : 1, t0);
                     lfo.start(0);
 
-                    let wet = clamp(0.10 + sizeNorm * 0.75, 0.10, 0.90);
-                    let dry = clamp(1.0 - wet * 0.65, 0.15, 1.0);
+                    let wet = reverbMode === 'plate'
+                        ? clamp(0.08 + sizeNorm * 0.50, 0.08, 0.70)
+                        : clamp(0.14 + sizeNorm * 0.72, 0.14, 0.92);
+                    let dry = clamp(1.0 - wet * 0.60, 0.20, 1.0);
                     if (preverbMode === 'kill') {
-                        wet = clamp(wet * 0.45, 0.08, 0.42);
-                        dry = clamp(1.0 - wet * 0.35, 0.65, 1.0);
+                        wet = clamp(wet * 0.45, 0.06, 0.40);
+                        dry = clamp(1.0 - wet * 0.30, 0.72, 1.0);
                     }
                     if (preverbMode === 'freeze') {
                         wet = Math.max(wet, 0.92);
@@ -2716,10 +2750,23 @@
                     if (reverbEnabled) {
                         const decayNorm = clamp(decay / 100, 0, 1);
                         const diffNorm = clamp(diff / 100, 0, 1);
-                        const seconds = clamp(0.35 + sizeNorm * 1.1 + decayNorm * 7.0, 0.35, 10.0);
+                        let seconds = clamp(0.35 + sizeNorm * 1.1 + decayNorm * 7.0, 0.35, 10.0);
+                        let diffusion = diffNorm;
+                        if (preverbMode === 'kill') {
+                            seconds = clamp(seconds * 0.58, 0.25, 5.0);
+                            diffusion = clamp(diffusion * 0.72, 0, 1);
+                        }
+                        if (preverbMode === 'freeze') {
+                            seconds = 12.0;
+                            diffusion = 0.98;
+                        }
+                        if (reverbMode === 'plate') {
+                            seconds = clamp(seconds * 0.78, 0.35, 8.0);
+                            diffusion = clamp(diffusion * 0.85, 0, 1);
+                        }
                         const irLen = Math.max(1, Math.floor(sourceRate * seconds));
                         const ir = offline.createBuffer(2, irLen, sourceRate);
-                        const diffExp = 0.8 + diffNorm * 3.2;
+                        const diffExp = 0.8 + diffusion * 3.2;
                         for (let ch = 0; ch < 2; ch++) {
                             const data = ir.getChannelData(ch);
                             for (let i = 0; i < irLen; i++) {
