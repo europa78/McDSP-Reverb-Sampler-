@@ -4,475 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>m²DSP Audio Effects Interface</title>
-    <style>
-        :root {
-            --bg-color: #121214;
-            --panel-bg: #1c1c1f;
-            --panel-border: #333336;
-            --text-main: #e0e0e0;
-            --text-muted: #888888;
-            --accent-green: #4ade80;
-            --accent-blue: #60a5fa;
-            --accent-orange: #fb923c;
-            --accent-red: #f87171;
-            --knob-size: 60px;
-            --font-tech: 'Courier New', Courier, monospace;
-            --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        }
+        <link rel="stylesheet" href="styles.css">
 
-        * {
-            box-sizing: border-box;
-            user-select: none;
-        }
-
-        body {
-            margin: 0;
-            padding: 20px;
-            background-color: var(--bg-color);
-            color: var(--text-main);
-            font-family: var(--font-ui);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            overflow-x: auto;
-        }
-
-        .device-container {
-            width: 100%;
-            max-width: 1000px;
-            background: linear-gradient(180deg, #2a2a2e 0%, #1a1a1c 100%);
-            border-radius: 12px;
-            box-shadow: 0 20px 50px rgba(0,0,0,0.8), inset 0 1px 1px rgba(255,255,255,0.1);
-            border: 1px solid #000;
-            padding: 2px;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 10px 20px;
-            background: #111;
-            border-bottom: 1px solid #333;
-            border-radius: 10px 10px 0 0;
-            font-family: var(--font-tech);
-            font-size: 0.85rem;
-            color: var(--text-muted);
-        }
-
-        .brand {
-            font-weight: bold;
-            color: var(--text-main);
-            letter-spacing: 1px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .brand span {
-            background: var(--accent-blue);
-            color: #000;
-            padding: 1px 4px;
-            border-radius: 2px;
-            font-size: 0.7rem;
-        }
-
-        .version { color: var(--accent-orange); }
-
-        .workspace {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 1px;
-            background-color: var(--panel-border);
-            flex-grow: 1;
-        }
-
-        .module {
-            background-color: var(--panel-bg);
-            padding: 15px;
-            display: flex;
-            flex-direction: column;
-            position: relative;
-        }
-
-        .module-header {
-            font-family: var(--font-tech);
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            margin-bottom: 15px;
-            border-bottom: 1px dashed #333;
-            padding-bottom: 5px;
-            letter-spacing: 1px;
-            display: flex;
-            justify-content: space-between;
-        }
-
-        .display-area {
-            grid-column: span 4;
-            background: #000;
-            padding: 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 4px solid #111;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .screen-content { text-align: left; z-index: 2; }
-
-        .screen-title {
-            font-family: var(--font-tech);
-            color: var(--accent-green);
-            font-size: 1.5rem;
-            margin: 0;
-            text-shadow: 0 0 10px rgba(74, 222, 128, 0.4);
-        }
-
-        .screen-subtitle {
-            font-family: var(--font-tech);
-            color: var(--accent-blue);
-            font-size: 1rem;
-            margin: 5px 0 0 0;
-            letter-spacing: 2px;
-        }
-
-        .waveform {
-            flex-grow: 1;
-            height: 60px;
-            margin: 0 40px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 3px;
-        }
-
-        .bar {
-            width: 4px;
-            background: var(--accent-green);
-            animation: wave 1s ease-in-out infinite;
-            border-radius: 2px;
-            opacity: 0.7;
-        }
-
-        @keyframes wave {
-            0%, 100% { height: 10%; opacity: 0.3; }
-            50% { height: 100%; opacity: 1; box-shadow: 0 0 8px var(--accent-green); }
-        }
-
-        .controls-grid {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 20px;
-            margin-top: 10px;
-        }
-
-        .control-group {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-
-        .knob-container {
-            position: relative;
-            width: var(--knob-size);
-            height: var(--knob-size);
-            cursor: ns-resize;
-        }
-
-        .knob {
-            width: 100%;
-            height: 100%;
-            border-radius: 50%;
-            background: radial-gradient(circle at 30% 30%, #444, #222);
-            box-shadow: 0 4px 8px rgba(0,0,0,0.5), inset 0 1px 1px rgba(255,255,255,0.2);
-            position: relative;
-            transform: rotate(0deg);
-            transition: transform 0.1s linear;
-        }
-        
-        .knob::after {
-            content: '';
-            position: absolute;
-            top: 10%;
-            left: 50%;
-            width: 3px;
-            height: 40%;
-            background: var(--text-muted);
-            transform: translateX(-50%);
-            border-radius: 2px;
-        }
-
-        .knob-container.active .knob {
-            box-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
-            border: 1px solid #555;
-        }
-        .knob-container.active .knob::after {
-            background: var(--accent-orange);
-        }
-
-        .knob-label {
-            margin-top: 8px;
-            font-size: 0.7rem;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            font-family: var(--font-tech);
-        }
-
-        .knob-value {
-            font-size: 0.7rem;
-            color: var(--accent-orange);
-            margin-top: 2px;
-            font-family: var(--font-tech);
-        }
-
-        .btn-row {
-            display: flex;
-            justify-content: space-between;
-            gap: 10px;
-            margin-top: auto;
-            padding-top: 15px;
-        }
-
-        .btn {
-            flex: 1;
-            padding: 8px 0;
-            background: #2a2a2e;
-            border: 1px solid #444;
-            border-radius: 4px;
-            color: #888;
-            font-size: 0.65rem;
-            text-transform: uppercase;
-            cursor: pointer;
-            font-family: var(--font-tech);
-            transition: all 0.2s;
-        }
-
-        .btn:hover { border-color: #666; color: #ccc; }
-
-        .btn.active {
-            background: var(--accent-green);
-            color: #000;
-            border-color: var(--accent-green);
-            box-shadow: 0 0 10px rgba(74, 222, 128, 0.4);
-            font-weight: bold;
-        }
-
-        .btn-danger.active {
-            background: var(--accent-red);
-            border-color: var(--accent-red);
-            box-shadow: 0 0 10px rgba(248, 113, 113, 0.4);
-        }
-
-        .btn-blue.active {
-            background: var(--accent-blue);
-            border-color: var(--accent-blue);
-            box-shadow: 0 0 10px rgba(96, 165, 250, 0.4);
-        }
-
-        .led {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: #333;
-            box-shadow: inset 0 1px 2px rgba(0,0,0,0.5);
-        }
-        .led.on {
-            background: var(--accent-green);
-            box-shadow: 0 0 5px var(--accent-green);
-        }
-        .led-orange.on {
-            background: var(--accent-orange);
-            box-shadow: 0 0 5px var(--accent-orange);
-        }
-
-        .footer {
-            background: #111;
-            padding: 15px 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 20px;
-            border-top: 1px solid #333;
-            border-radius: 0 0 10px 10px;
-            flex-wrap: wrap;
-        }
-
-        /* Sample Browser Styles */
-        .sample-browser {
-            display: flex;
-            flex: 1;
-            min-width: 300px;
-            background: #1a1a1c;
-            border: 1px solid #333;
-            border-radius: 6px;
-            overflow: hidden;
-            height: 80px;
-        }
-
-        .sb-list-container {
-            width: 35%; /* Slightly smaller to fit transport buttons */
-            border-right: 1px solid #333;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .sb-header {
-            padding: 5px 8px;
-            background: #222;
-            font-size: 0.65rem;
-            font-family: var(--font-tech);
-            color: var(--text-muted);
-            border-bottom: 1px solid #333;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            height: 30px;
-        }
-
-        .sb-controls {
-            display: flex;
-            gap: 5px;
-        }
-
-        .sb-transport-btn {
-            background: #333;
-            border: 1px solid #444;
-            color: #fff;
-            width: 20px;
-            height: 20px;
-            border-radius: 2px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 10px;
-        }
-        .sb-transport-btn:hover {
-            background: #444;
-            border-color: #666;
-        }
-        .sb-transport-btn.playing {
-            background: var(--accent-green);
-            color: #000;
-            box-shadow: 0 0 5px var(--accent-green);
-        }
-
-        .sb-transport-btn.looping {
-            background: var(--accent-blue);
-            color: #000;
-            box-shadow: 0 0 5px var(--accent-blue);
-            font-weight: 700;
-        }
-
-        .sb-import-btn {
-            background: transparent;
-            border: 1px solid #444;
-            color: #666;
-            cursor: pointer;
-            font-size: 0.6rem;
-            padding: 2px 5px;
-            transition: color 0.2s, border-color 0.2s;
-        }
-        .sb-import-btn:hover {
-            color: var(--accent-green);
-            border-color: var(--accent-green);
-        }
-
-        .sb-list {
-            list-style: none;
-            padding: 0;
-            margin: 0;
-            overflow-y: auto;
-            flex-grow: 1;
-        }
-
-        .sb-list::-webkit-scrollbar { width: 4px; }
-        .sb-list::-webkit-scrollbar-thumb { background: #444; }
-
-        .sb-list li {
-            padding: 4px 8px;
-            font-size: 0.7rem;
-            font-family: var(--font-tech);
-            color: #aaa;
-            cursor: pointer;
-            border-bottom: 1px solid #222;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        .sb-list li:hover { background: #252528; color: #fff; }
-
-        .sb-list li.active {
-            background: #2a3a2a;
-            color: var(--accent-green);
-            border-left: 2px solid var(--accent-green);
-        }
-
-        .sb-waveform-container {
-            width: 65%;
-            position: relative;
-            background: #000;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 0 10px;
-            cursor: default;
-        }
-
-        canvas#waveformCanvas {
-            width: 100%;
-            height: 100%;
-            display: block;
-        }
-
-        .sb-label {
-            position: absolute;
-            top: 2px;
-            right: 5px;
-            font-size: 0.6rem;
-            color: #444;
-            font-family: var(--font-tech);
-            pointer-events: none;
-        }
-
-        .master-knob-wrapper {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            background: #1a1a1c;
-            padding: 0 15px;
-            height: 80px;
-            border: 1px solid #333;
-            border-radius: 6px;
-        }
-        
-        .master-label {
-            font-size: 0.7rem;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            text-align: right;
-            line-height: 1.2;
-        }
-
-        @media (max-width: 800px) {
-            .workspace { grid-template-columns: 1fr 1fr; }
-            .display-area { grid-column: span 2; }
-            .footer { flex-direction: column; align-items: stretch; }
-            .master-knob-wrapper { justify-content: center; }
-        }
-
-        @media (max-width: 500px) {
-            .workspace { grid-template-columns: 1fr; }
-            .display-area { grid-column: span 1; flex-direction: column; gap: 20px; }
-            .waveform { margin: 10px 0; width: 100%; }
-        }
-    </style>
 </head>
 <body>
 
@@ -510,10 +43,10 @@
                 <div class="bar" style="animation-delay: 0.4s"></div>
             </div>
 
-            <div style="text-align: right; font-family: var(--font-tech); font-size: 0.7rem; color: var(--text-muted);">
-                <div>BYPASS</div>
-                <div class="led led-orange on" style="margin: 5px auto;"></div>
-                <div>ON</div>
+            <div style="text-align: right; font-family: var(--font-tech); font-size: 0.7rem; color: var(--text-muted); display:flex; flex-direction:column; align-items:center;">
+                <div>MASTER FX</div>
+                <div class="led led-orange on" id="masterBypassLed" style="margin: 5px auto;"></div>
+                <button class="master-bypass-btn" id="masterBypassBtn" aria-pressed="false">FX ON</button>
             </div>
         </section>
 
@@ -583,12 +116,47 @@
                     </div>
                 </div>
                 <div class="btn-row">
-                    <button class="btn active">Kill</button>
+                    <button class="btn">Kill</button>
                     <button class="btn btn-blue active">Freeze</button>
                 </div>
             </div>
 
-            <!-- Module 3: Reverb -->
+            <!-- Module 3: Delay -->
+            <div class="module">
+                <div class="module-header">
+                    <span>Delay</span>
+                    <span class="led on"></span>
+                </div>
+                <div class="controls-grid">
+                    <div class="control-group">
+                        <div class="knob-container" data-param="Time" data-min="0" data-max="100" data-value="35">
+                            <div class="knob" style="transform: rotate(36deg);"></div>
+                        </div>
+                        <div class="knob-label">Time</div>
+                        <div class="knob-value">35%</div>
+                    </div>
+                    <div class="control-group">
+                        <div class="knob-container" data-param="Feedback" data-min="0" data-max="100" data-value="40">
+                            <div class="knob" style="transform: rotate(54deg);"></div>
+                        </div>
+                        <div class="knob-label">Feedback</div>
+                        <div class="knob-value">40%</div>
+                    </div>
+                    <div class="control-group">
+                        <div class="knob-container" data-param="Mix" data-min="0" data-max="100" data-value="25">
+                            <div class="knob" style="transform: rotate(-45deg);"></div>
+                        </div>
+                        <div class="knob-label">Mix</div>
+                        <div class="knob-value">25%</div>
+                    </div>
+                </div>
+                <div class="btn-row">
+                    <button class="btn btn-blue active">Digital</button>
+                    <button class="btn">Tape</button>
+                </div>
+            </div>
+
+            <!-- Module 4: Reverb -->
             <div class="module">
                 <div class="module-header">
                     <span>Reverb</span>
@@ -623,7 +191,7 @@
                 </div>
             </div>
 
-            <!-- Module 4: Dynamics -->
+            <!-- Module 5: Dynamics -->
             <div class="module">
                 <div class="module-header">
                     <span>Dynamics</span>
@@ -659,32 +227,84 @@
             </div>
         </div>
 
+        <section class="keyboard-rack" aria-label="MIDI keyboard">
+            <div class="keyboard-top-row">
+                <div class="keyboard-label" style="margin-bottom:0;">MIDI KEYBOARD • 5 OCTAVES</div>
+                <label class="keyboard-channel-control">Internal KB Channel
+                    <select id="internalKbChannel">
+                        <option value="1">1 (A)</option>
+                        <option value="2">2 (B)</option>
+                        <option value="3" selected>3 (OSC)</option>
+                    </select>
+                </label>
+            </div>
+            <div class="midi-keyboard" id="midiKeyboard"></div>
+        </section>
+
         <footer class="footer">
-            <div class="sample-browser">
-                <div class="sb-list-container">
-                    <div class="sb-header">
-                        <span>SAMPLES</span>
-                        <div class="sb-controls">
-                            <button class="sb-transport-btn" id="playBtn" title="Play">&#9658;</button>
-                            <button class="sb-transport-btn" id="stopBtn" title="Stop">&#9632;</button>
-                            <button class="sb-transport-btn" id="loopBtn" title="Loop" aria-pressed="false">&#8734;</button>
-                            <button class="sb-import-btn" id="importBtn">IMPORT</button>
+            <div class="sampler-stack">
+                <div class="sample-browser" data-deck="A">
+                    <div class="sb-list-container">
+                        <div class="sb-header">
+                            <span>SAMPLES A</span>
+                            <div class="sb-controls">
+                                <button class="sb-transport-btn" data-role="play" title="Play">&#9658;</button>
+                                <button class="sb-transport-btn" data-role="stop" title="Stop">&#9632;</button>
+                                <button class="sb-transport-btn" data-role="loop" title="Loop" aria-pressed="false">&#8734;</button>
+                                <button class="sb-import-btn" data-role="import">IMPORT</button>
+                                <button class="sb-export-btn" data-role="export">EXPORT</button>
+                                <button class="sb-mute-btn" data-role="mute">Mute A</button>
+                                <label class="sb-volume">Volume A <input type="range" data-role="deck-volume" min="0" max="100" value="80" /><span class="sb-volume-value" data-role="deck-volume-value">80</span></label>
+                            </div>
                         </div>
+                        <ul class="sb-list" data-role="sample-list">
+                            <li class="active" data-type="default">Kick_Deep.wav</li>
+                            <li data-type="default">Snare_Trap.wav</li>
+                            <li data-type="default">HiHat_Closed_01.wav</li>
+                            <li data-type="default">Atmosphere_Pad.wav</li>
+                            <li data-type="default">Glitch_04.wav</li>
+                            <li data-type="default">Bass_Sub.wav</li>
+                            <li data-type="default">Vox_Chop.wav</li>
+                            <li data-type="default">Interference.wav</li>
+                        </ul>
                     </div>
-                    <ul class="sb-list" id="sampleList">
-                        <li class="active" data-type="default">Kick_Deep.wav</li>
-                        <li data-type="default">Snare_Trap.wav</li>
-                        <li data-type="default">HiHat_Closed_01.wav</li>
-                        <li data-type="default">Atmosphere_Pad.wav</li>
-                        <li data-type="default">Glitch_04.wav</li>
-                        <li data-type="default">Bass_Sub.wav</li>
-                        <li data-type="default">Vox_Chop.wav</li>
-                        <li data-type="default">Interference.wav</li>
-                    </ul>
+                    <div class="sb-waveform-container" data-role="waveform-container">
+                        <span class="sb-label">PREVIEW (DRAG EDGES)</span>
+                        <canvas data-role="waveform"></canvas>
+                    </div>
+                    <input type="file" data-role="audio-input" accept=".wav,.mp3,.aac,.flac,audio/*" style="display: none;" />
                 </div>
-                <div class="sb-waveform-container" id="waveformContainer">
-                    <span class="sb-label">PREVIEW (DRAG EDGES)</span>
-                    <canvas id="waveformCanvas"></canvas>
+
+                <div class="sample-browser" data-deck="B">
+                    <div class="sb-list-container">
+                        <div class="sb-header">
+                            <span>SAMPLES B</span>
+                            <div class="sb-controls">
+                                <button class="sb-transport-btn" data-role="play" title="Play">&#9658;</button>
+                                <button class="sb-transport-btn" data-role="stop" title="Stop">&#9632;</button>
+                                <button class="sb-transport-btn" data-role="loop" title="Loop" aria-pressed="false">&#8734;</button>
+                                <button class="sb-import-btn" data-role="import">IMPORT</button>
+                                <button class="sb-export-btn" data-role="export">EXPORT</button>
+                                <button class="sb-mute-btn" data-role="mute">Mute B</button>
+                                <label class="sb-volume">Volume B <input type="range" data-role="deck-volume" min="0" max="100" value="80" /><span class="sb-volume-value" data-role="deck-volume-value">80</span></label>
+                            </div>
+                        </div>
+                        <ul class="sb-list" data-role="sample-list">
+                            <li class="active" data-type="default">Interference.wav</li>
+                            <li data-type="default">Vox_Chop.wav</li>
+                            <li data-type="default">Bass_Sub.wav</li>
+                            <li data-type="default">Glitch_04.wav</li>
+                            <li data-type="default">Atmosphere_Pad.wav</li>
+                            <li data-type="default">HiHat_Closed_01.wav</li>
+                            <li data-type="default">Snare_Trap.wav</li>
+                            <li data-type="default">Kick_Deep.wav</li>
+                        </ul>
+                    </div>
+                    <div class="sb-waveform-container" data-role="waveform-container">
+                        <span class="sb-label">PREVIEW (DRAG EDGES)</span>
+                        <canvas data-role="waveform"></canvas>
+                    </div>
+                    <input type="file" data-role="audio-input" accept=".wav,.mp3,.aac,.flac,audio/*" style="display: none;" />
                 </div>
             </div>
 
@@ -695,832 +315,31 @@
                 </div>
                 <span class="master-label" style="color: var(--accent-green)">90</span>
             </div>
+
+            <div class="midi-panel" aria-live="polite">
+                <div class="midi-top-row">
+                    <span class="midi-status" id="midiStatus">MIDI: Off</span>
+                    <button class="midi-btn" id="midiBtn">MIDI ON</button>
+                </div>
+                <div class="midi-controls">
+                    <label for="midiInputSelect">INPUT</label>
+                    <select id="midiInputSelect" class="midi-select">
+                        <option value="all">All inputs</option>
+                    </select>
+                    <label for="midiTargetSelect">CHANNEL</label>
+                    <select id="midiTargetSelect" class="midi-select">
+                        <option value="1">1 (A)</option>
+                        <option value="2">2 (B)</option>
+                        <option value="3">3 (OSC)</option>
+                        <option value="ALL" selected>ALL (1/2/3)</option>
+                    </select>
+                </div>
+                <div class="midi-map" id="midiMapPreview">USB MIDI map ready: CC 20-32 · Note On/Off sampler pitch/velocity · CC120/123 panic.</div>
+            </div>
         </footer>
     </div>
 
-    <!-- Hidden File Input -->
-    <input type="file" id="audioFileInput" accept=".wav,.mp3,.aac,.flac,audio/*" style="display: none;" />
+        <script type="module" src="app.js"></script>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            // --- Global State ---
-            let audioContext = null;
-            let currentBuffer = null;
-            let sourceNode = null;
-            let isPlaying = false;
-            let isLooping = false; // transport loop toggle
-            
-
-            // FX graph state (built on-demand once audioContext exists)
-            let fx = null; // { input, output, nodes... }
-            const knobState = Object.create(null);
-            let reverbRegenTimer = null;
-            // Waveform/Editing State
-            let regionStart = 0.0; // 0.0 to 1.0
-            let regionEnd = 1.0;   // 0.0 to 1.0
-            let isDraggingStart = false;
-            let isDraggingEnd = false;
-            
-            const canvas = document.getElementById('waveformCanvas');
-            const ctx = canvas.getContext('2d');
-            const playBtn = document.getElementById('playBtn');
-            const stopBtn = document.getElementById('stopBtn');
-            const loopBtn = document.getElementById('loopBtn');
-
-            // --- 0. Knob Interaction (UI) ---
-            // The HTML defines knobs via .knob-container + data-min/data-max/data-value,
-            // but there was no JS to make them interactive, so they never changed.
-            const KNOB_ANGLE_MIN = -90;  // degrees (12 o'clock-ish)
-            const KNOB_ANGLE_MAX = 270;  // degrees (full 360° sweep)
-
-            const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-            const toNumber = (v, fallback = 0) => {
-                const n = Number(v);
-                return Number.isFinite(n) ? n : fallback;
-            };
-
-            const knobContainers = Array.from(document.querySelectorAll('.knob-container'));
-
-            function valueToAngle(value, min, max) {
-                const range = (max - min);
-                if (!Number.isFinite(range) || range === 0) return KNOB_ANGLE_MIN;
-                const t = clamp((value - min) / range, 0, 1);
-                return KNOB_ANGLE_MIN + t * (KNOB_ANGLE_MAX - KNOB_ANGLE_MIN);
-            }
-
-            function formatKnobValue(param, value, min, max) {
-                const p = String(param || '').toLowerCase();
-
-                if (p === 'master') return String(Math.round(value));
-                if (p === 'ratio') return `${Math.round(value)}:1`;
-                if (p === 'gain' || p === 'makeup') return `+${Math.round(value)}dB`;
-
-                // Threshold in this UI is 0..100; map to -inf / -60..0dB for display.
-                if (p === 'thresh' || p === 'threshold') {
-                    if (value <= min) return '-inf';
-                    const t = clamp((value - min) / (max - min || 1), 0, 1);
-                    const db = -60 + t * 60;
-                    return `${db.toFixed(0)}dB`;
-                }
-
-                // Anything that looks like a "cut" knob is a % in this mock UI.
-                if (p.includes('cut')) return `${Math.round(value)}%`;
-
-                // Default: if 0..100 treat as percent, otherwise show raw.
-                if (min === 0 && max === 100) return `${Math.round(value)}%`;
-                return String(Math.round(value * 100) / 100);
-            }
-
-            function setKnobUI(container, value) {
-                const min = toNumber(container.dataset.min, 0);
-                const max = toNumber(container.dataset.max, 100);
-                const param = container.dataset.param || '';
-
-                const v = clamp(toNumber(value, min), min, max);
-                container.dataset.value = String(v);
-
-                const knobEl = container.querySelector('.knob');
-                if (knobEl) {
-                    const angle = valueToAngle(v, min, max);
-                    knobEl.style.transform = `rotate(${angle.toFixed(1)}deg)`;
-                }
-
-                const display = formatKnobValue(param, v, min, max);
-
-                // Update per-module value readout if present
-                const group = container.closest('.control-group');
-                if (group) {
-                    const valueEl = group.querySelector('.knob-value');
-                    if (valueEl) valueEl.textContent = display;
-                } else {
-                    // Master knob: the value is the next element sibling (green number)
-                    const next = container.nextElementSibling;
-                    if (next && next.classList.contains('master-label')) {
-                        next.textContent = display;
-                    }
-                }
-
-                // Notify audio engine (stores state even if audioContext not ready)
-                handleKnobChange(param, v);
-            }
-
-            // Init knobs (override whatever inline rotate() happens to be)
-            knobContainers.forEach((c) => {
-                // Make focusable for keyboard tweaks
-                if (!c.hasAttribute('tabindex')) c.setAttribute('tabindex', '0');
-                setKnobUI(c, toNumber(c.dataset.value, 0));
-            });
-
-            // Drag state (one knob at a time)
-            let activeKnob = null;
-            let dragStartY = 0;
-            let dragStartValue = 0;
-
-            function onKnobPointerDown(e) {
-                const c = e.currentTarget;
-                e.preventDefault();
-                c.classList.add('active');
-                c.setPointerCapture?.(e.pointerId);
-
-                activeKnob = c;
-                dragStartY = e.clientY;
-
-                const min = toNumber(c.dataset.min, 0);
-                dragStartValue = toNumber(c.dataset.value, min);
-            }
-
-            function onKnobPointerMove(e) {
-                if (!activeKnob || e.currentTarget !== activeKnob) return;
-
-                const c = activeKnob;
-                const min = toNumber(c.dataset.min, 0);
-                const max = toNumber(c.dataset.max, 100);
-                const range = (max - min) || 1;
-
-                // Up = increase, Down = decrease
-                const dy = dragStartY - e.clientY;
-
-                // Sensitivity: ~150px drag for full range; hold Shift for fine control.
-                const pixelsPerFullRange = e.shiftKey ? 750 : 150;
-                const delta = (dy / pixelsPerFullRange) * range;
-
-                setKnobUI(c, dragStartValue + delta);
-            }
-
-            function onKnobPointerUp(e) {
-                const c = e.currentTarget;
-                c.classList.remove('active');
-
-                if (activeKnob === c) {
-                    activeKnob = null;
-                }
-                try { c.releasePointerCapture?.(e.pointerId); } catch (_) {}
-            }
-
-            function onKnobWheel(e) {
-                const c = e.currentTarget;
-                const min = toNumber(c.dataset.min, 0);
-                const max = toNumber(c.dataset.max, 100);
-                const range = (max - min) || 1;
-
-                // Prevent page scroll while adjusting a knob.
-                e.preventDefault();
-
-                const step = (e.shiftKey ? range / 500 : range / 200); // fine with Shift
-                const dir = Math.sign(-e.deltaY || 0);
-                const current = toNumber(c.dataset.value, min);
-
-                setKnobUI(c, current + dir * step);
-            }
-
-            function onKnobKeyDown(e) {
-                const c = e.currentTarget;
-                const min = toNumber(c.dataset.min, 0);
-                const max = toNumber(c.dataset.max, 100);
-                const range = (max - min) || 1;
-
-                const step = (e.shiftKey ? range / 50 : range / 200);
-                const current = toNumber(c.dataset.value, min);
-
-                if (e.key === 'ArrowUp' || e.key === 'ArrowRight') {
-                    e.preventDefault();
-                    setKnobUI(c, current + step);
-                } else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') {
-                    e.preventDefault();
-                    setKnobUI(c, current - step);
-                } else if (e.key === 'Home') {
-                    e.preventDefault();
-                    setKnobUI(c, min);
-                } else if (e.key === 'End') {
-                    e.preventDefault();
-                    setKnobUI(c, max);
-                }
-            }
-
-            // Bind events
-            knobContainers.forEach((c) => {
-                c.addEventListener('pointerdown', onKnobPointerDown);
-                c.addEventListener('pointermove', onKnobPointerMove);
-                c.addEventListener('pointerup', onKnobPointerUp);
-                c.addEventListener('pointercancel', onKnobPointerUp);
-                c.addEventListener('wheel', onKnobWheel, { passive: false });
-                c.addEventListener('keydown', onKnobKeyDown);
-            });
-
-
-            // --- Helper: Init Audio Context ---
-            const initAudioContext = () => {
-                if (!audioContext) {
-                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                }
-                if (audioContext.state === 'suspended') {
-                    audioContext.resume();
-                }
-            };
-
-            // --- FX Graph (WebAudio) ---
-            // Build once, then update node params as knobs change.
-            function ensureFxGraph() {
-                if (!audioContext) return null;
-                if (fx) return fx;
-
-                // Core nodes
-                const input = audioContext.createGain();
-
-                // Distortion stage
-                const driveGain = audioContext.createGain();
-                const shaper = audioContext.createWaveShaper();
-                shaper.oversample = '4x';
-                const toneFilter = audioContext.createBiquadFilter();
-                toneFilter.type = 'lowpass';
-                const distLevel = audioContext.createGain();
-
-                // Reverb stage (with predelay + optional modulation)
-                const preDelay = audioContext.createDelay(0.2); // up to 200ms
-                const modDelay = audioContext.createDelay(0.05); // subtle modulation
-                const modDepth = audioContext.createGain(); // scales LFO
-                const lfo = audioContext.createOscillator();
-                const lfoGain = audioContext.createGain();
-                lfo.type = 'sine';
-                lfo.frequency.value = 0.8; // updated by Mod knob
-                lfoGain.gain.value = 0.0;  // updated by Mod knob
-                lfo.connect(lfoGain);
-                lfoGain.connect(modDepth);
-                modDepth.connect(modDelay.delayTime);
-                lfo.start();
-
-                const convolver = audioContext.createConvolver();
-
-                // Post-reverb EQ
-                const lowCut = audioContext.createBiquadFilter();
-                lowCut.type = 'highpass';
-                const highCut = audioContext.createBiquadFilter();
-                highCut.type = 'lowpass';
-
-                // Wet/Dry mix (no dedicated knob in UI; we derive from Size)
-                const dryGain = audioContext.createGain();
-                const wetGain = audioContext.createGain();
-
-                // Dynamics + output
-                const compressor = audioContext.createDynamicsCompressor();
-                compressor.knee.value = 24;
-                compressor.attack.value = 0.006;
-                compressor.release.value = 0.18;
-
-                const makeupGain = audioContext.createGain();
-                const masterGain = audioContext.createGain();
-
-                // Wire it up:
-                // input -> drive -> shaper -> tone -> level -> split dry + wet
-                input.connect(driveGain);
-                driveGain.connect(shaper);
-                shaper.connect(toneFilter);
-                toneFilter.connect(distLevel);
-
-                // dry path
-                distLevel.connect(dryGain);
-
-                // wet path: predelay -> modDelay -> convolver -> EQ -> wetGain
-                distLevel.connect(preDelay);
-                preDelay.connect(modDelay);
-                modDelay.connect(convolver);
-                convolver.connect(lowCut);
-                lowCut.connect(highCut);
-                highCut.connect(wetGain);
-
-                // sum -> compressor -> makeup -> master -> destination
-                const sum = audioContext.createGain();
-                dryGain.connect(sum);
-                wetGain.connect(sum);
-
-                sum.connect(compressor);
-                compressor.connect(makeupGain);
-                makeupGain.connect(masterGain);
-                masterGain.connect(audioContext.destination);
-
-                fx = {
-                    input,
-                    output: masterGain,
-                    nodes: {
-                        driveGain, shaper, toneFilter, distLevel,
-                        preDelay, modDelay, modDepth, lfo, lfoGain,
-                        convolver, lowCut, highCut,
-                        dryGain, wetGain,
-                        compressor, makeupGain, masterGain,
-                        sum
-                    }
-                };
-
-                // Initialize node params from current knob positions
-                applyAllKnobsToAudio();
-
-                // Build initial impulse response
-                scheduleReverbRegen(true);
-
-                return fx;
-            }
-
-            function dbToGain(db) {
-                return Math.pow(10, db / 20);
-            }
-
-            function makeDistortionCurve(amount) {
-                // amount: 0..1
-                const k = 1 + amount * 60; // higher = more distortion
-                const n = 2048;
-                const curve = new Float32Array(n);
-                for (let i = 0; i < n; i++) {
-                    const x = (i * 2) / (n - 1) - 1;
-                    curve[i] = (1 + k) * x / (1 + k * Math.abs(x));
-                }
-                return curve;
-            }
-
-            function createImpulseResponse({ seconds, diffusion }) {
-                // seconds: length of IR; diffusion: 0..1 controls envelope curvature/density
-                const sr = audioContext.sampleRate;
-                const length = Math.max(1, Math.floor(sr * seconds));
-                const ir = audioContext.createBuffer(2, length, sr);
-
-                // Diffusion affects how quickly energy decays early vs late
-                const diffExp = 0.8 + diffusion * 3.2; // 0.8..4.0
-
-                for (let ch = 0; ch < 2; ch++) {
-                    const data = ir.getChannelData(ch);
-                    for (let i = 0; i < length; i++) {
-                        const t = i / length;
-                        // Exponential-ish envelope
-                        const env = Math.pow(1 - t, diffExp);
-                        // Slight stereo decorrelation
-                        const noise = (Math.random() * 2 - 1) * env;
-                        data[i] = noise;
-                    }
-                }
-                return ir;
-            }
-
-            function scheduleReverbRegen(force = false) {
-                if (!audioContext || !fx) return;
-                if (force) {
-                    regenReverbNow();
-                    return;
-                }
-                if (reverbRegenTimer) clearTimeout(reverbRegenTimer);
-                reverbRegenTimer = setTimeout(() => {
-                    regenReverbNow();
-                    reverbRegenTimer = null;
-                }, 80);
-            }
-
-            function regenReverbNow() {
-                if (!audioContext || !fx) return;
-
-                // Read knobs (fallback defaults)
-                const size = toNumber(knobState['Size'] ?? 30, 30);      // 0..100
-                const decay = toNumber(knobState['Decay'] ?? 85, 85);    // 0..100
-                const diff = toNumber(knobState['Diff'] ?? 75, 75);      // 0..100
-
-                // Map to IR length in seconds
-                const sizeNorm = clamp(size / 100, 0, 1);
-                const decayNorm = clamp(decay / 100, 0, 1);
-                const diffNorm = clamp(diff / 100, 0, 1);
-
-                // IR length: small rooms shorter, bigger rooms longer; decay dominates tail
-                const seconds = clamp(0.35 + sizeNorm * 1.1 + decayNorm * 7.0, 0.35, 10.0);
-
-                const ir = createImpulseResponse({ seconds, diffusion: diffNorm });
-                fx.nodes.convolver.buffer = ir;
-            }
-
-            function applyAllKnobsToAudio() {
-                // Apply every current knob value (if any) to audio nodes.
-                if (!audioContext) return;
-                ensureFxGraph();
-                Object.keys(knobState).forEach((p) => applyKnobToAudio(p, knobState[p]));
-            }
-
-            function applyKnobToAudio(param, value) {
-                if (!audioContext || !fx) return;
-                const t = audioContext.currentTime;
-                const n = fx.nodes;
-                const v = toNumber(value, 0);
-
-                switch (param) {
-                    // --- Distortion ---
-                    case 'Drive': {
-                        const norm = clamp(v / 100, 0, 1);
-                        // Pre gain 1..20
-                        n.driveGain.gain.setTargetAtTime(1 + norm * 19, t, 0.01);
-                        n.shaper.curve = makeDistortionCurve(norm);
-                        break;
-                    }
-                    case 'Tone': {
-                        const norm = clamp(v / 100, 0, 1);
-                        // 500..12000 Hz
-                        const cutoff = 500 * Math.pow(24, norm); // ~500..12000
-                        n.toneFilter.frequency.setTargetAtTime(cutoff, t, 0.01);
-                        n.toneFilter.Q.setTargetAtTime(0.5 + norm * 1.5, t, 0.01);
-                        break;
-                    }
-                    case 'Level': {
-                        const norm = clamp(v / 100, 0, 1);
-                        // 0..1.6
-                        n.distLevel.gain.setTargetAtTime(norm * 1.6, t, 0.01);
-                        break;
-                    }
-
-                    // --- Reverb ---
-                    case 'Size': {
-                        const norm = clamp(v / 100, 0, 1);
-                        // predelay 0..60ms
-                        n.preDelay.delayTime.setTargetAtTime(norm * 0.06, t, 0.01);
-
-                        // Wet/dry derived from size (bigger room => more wet)
-                        const wet = clamp(0.10 + norm * 0.75, 0.10, 0.90);
-                        const dry = clamp(1.0 - wet * 0.65, 0.15, 1.0);
-                        n.wetGain.gain.setTargetAtTime(wet, t, 0.02);
-                        n.dryGain.gain.setTargetAtTime(dry, t, 0.02);
-
-                        // Size influences IR too
-                        scheduleReverbRegen();
-                        break;
-                    }
-                    case 'Diff': {
-                        scheduleReverbRegen();
-                        break;
-                    }
-                    case 'Decay': {
-                        scheduleReverbRegen();
-                        break;
-                    }
-                    case 'Mod': {
-                        const norm = clamp(v / 100, 0, 1);
-                        // LFO rate 0.2..2.2 Hz, depth 0..8ms
-                        const rate = 0.2 + norm * 2.0;
-                        const depth = norm * 0.008; // seconds
-                        n.lfo.frequency.setTargetAtTime(rate, t, 0.02);
-                        n.lfoGain.gain.setTargetAtTime(1.0, t, 0.02);
-                        // Base delay follows a bit of size, but keep subtle
-                        n.modDelay.delayTime.setTargetAtTime(0.010, t, 0.02);
-                        n.modDepth.gain.setTargetAtTime(depth, t, 0.02);
-                        break;
-                    }
-                    case 'Low Cut': {
-                        // 20..800 Hz
-                        const norm = clamp(v / 100, 0, 1);
-                        const fc = 20 * Math.pow(40, norm); // ~20..800
-                        n.lowCut.frequency.setTargetAtTime(fc, t, 0.02);
-                        n.lowCut.Q.setTargetAtTime(0.7, t, 0.02);
-                        break;
-                    }
-                    case 'High Cut': {
-                        // 1000..16000 Hz
-                        const norm = clamp(v / 100, 0, 1);
-                        const fc = 16000 * Math.pow(0.0625, 1 - norm); // ~1000..16000
-                        n.highCut.frequency.setTargetAtTime(fc, t, 0.02);
-                        n.highCut.Q.setTargetAtTime(0.7, t, 0.02);
-                        break;
-                    }
-
-                    // --- Dynamics ---
-                    case 'Thresh': {
-                        // knob 0..100 => -60..0 dB
-                        const thr = -60 + (clamp(v / 100, 0, 1) * 60);
-                        n.compressor.threshold.setTargetAtTime(thr, t, 0.02);
-                        break;
-                    }
-                    case 'Ratio': {
-                        // knob min 1 max 20 => 1..20
-                        n.compressor.ratio.setTargetAtTime(clamp(v, 1, 20), t, 0.02);
-                        break;
-                    }
-                    case 'Gain': {
-                        // knob 0..24 => 0..24 dB makeup
-                        const g = dbToGain(clamp(v, 0, 24));
-                        n.makeupGain.gain.setTargetAtTime(g, t, 0.02);
-                        break;
-                    }
-
-                    // --- Master ---
-                    case 'Master': {
-                        const norm = clamp(v / 100, 0, 1);
-                        // 0..1.0 with a gentle taper
-                        n.masterGain.gain.setTargetAtTime(Math.pow(norm, 1.6), t, 0.02);
-                        break;
-                    }
-                }
-            }
-
-            function handleKnobChange(param, value) {
-                if (!param) return;
-                knobState[param] = toNumber(value, 0);
-
-                // If audio is ready, apply immediately
-                if (!audioContext) return;
-                ensureFxGraph();
-                applyKnobToAudio(param, knobState[param]);
-            }
-
-            // --- 1. Import Logic ---
-            const importBtn = document.getElementById('importBtn');
-            const fileInput = document.getElementById('audioFileInput');
-            const sampleList = document.getElementById('sampleList');
-
-            importBtn.addEventListener('click', () => {
-                initAudioContext();
-                fileInput.click();
-            });
-
-            fileInput.addEventListener('change', (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-
-                const li = document.createElement('li');
-                li.textContent = file.name;
-                li.dataset.type = 'imported'; // Marker for real audio
-
-                // UI Updates
-                document.querySelectorAll('#sampleList li').forEach(i => i.classList.remove('active'));
-                sampleList.appendChild(li);
-                li.classList.add('active');
-                li.scrollIntoView({ behavior: 'smooth' });
-
-                // Decode
-                const reader = new FileReader();
-                reader.onload = (ev) => {
-                    const arrayBuffer = ev.target.result;
-                    if (audioContext) {
-                        audioContext.decodeAudioData(arrayBuffer, (buffer) => {
-                            currentBuffer = buffer;
-                            resetRegion();
-                            drawWaveform();
-                            // Ensure FX is ready so playback immediately routes through it
-                            ensureFxGraph();
-                        }, (e) => console.error("Error decoding audio", e));
-                    }
-                };
-                reader.readAsArrayBuffer(file);
-            });
-
-            // --- 2. Transport Controls ---
-            
-            function playSample() {
-                initAudioContext();
-                ensureFxGraph();
-
-                if (!currentBuffer && !isPlaying) {
-                    // Generate a procedural buffer if nothing loaded, just for demo
-                    createProceduralBuffer();
-                }
-                if (!currentBuffer) return;
-
-                stopSample(); // Stop any existing
-
-                sourceNode = audioContext.createBufferSource();
-                sourceNode.buffer = currentBuffer;
-                // Route through FX graph
-                sourceNode.connect(fx.input);
-
-                // Calculate duration and offset based on markers
-                const duration = currentBuffer.duration * (regionEnd - regionStart);
-                const offset = currentBuffer.duration * regionStart;
-
-                // Loop support: when enabled, loop the selected region continuously.
-                sourceNode.loop = isLooping;
-                if (isLooping) {
-                    sourceNode.loopStart = offset;
-                    sourceNode.loopEnd = offset + duration;
-                    sourceNode.start(0, offset); // no duration => doesn't auto-stop
-                } else {
-                    sourceNode.start(0, offset, duration);
-                }
-
-                isPlaying = true;
-                playBtn.classList.add('playing');
-
-                // Only auto-clear on non-loop playback end. (When looping, stopSample() owns UI state.)
-                if (!isLooping) {
-                    sourceNode.onended = () => {
-                        isPlaying = false;
-                        playBtn.classList.remove('playing');
-                    };
-                }
-            }
-
-            function stopSample() {
-                if (sourceNode) {
-                    try { sourceNode.stop(); } catch(e) {}
-                    try { sourceNode.disconnect(); } catch(e) {}
-                    sourceNode = null;
-                }
-                isPlaying = false;
-                playBtn.classList.remove('playing');
-            }
-
-            function updateSourceLoopingFromRegion() {
-                // Update loop points live (useful if user drags region handles while looping).
-                if (!sourceNode || !currentBuffer) return;
-                const duration = currentBuffer.duration * (regionEnd - regionStart);
-                const offset = currentBuffer.duration * regionStart;
-                sourceNode.loop = isLooping;
-                if (isLooping) {
-                    sourceNode.loopStart = offset;
-                    sourceNode.loopEnd = offset + duration;
-                }
-            }
-
-            function updateLoopButtonUI() {
-                if (!loopBtn) return;
-                loopBtn.classList.toggle('looping', isLooping);
-                loopBtn.setAttribute('aria-pressed', String(isLooping));
-                loopBtn.title = isLooping ? 'Loop: On' : 'Loop: Off';
-            }
-            updateLoopButtonUI();
-
-            playBtn.addEventListener('click', playSample);
-            stopBtn.addEventListener('click', stopSample);
-
-            loopBtn.addEventListener('click', () => {
-                isLooping = !isLooping;
-                updateLoopButtonUI();
-                updateSourceLoopingFromRegion();
-            });
-
-            // Keyboard shortcut: "L" toggles loop (when not typing in an input).
-            window.addEventListener('keydown', (e) => {
-                const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
-                if (tag === 'input' || tag === 'textarea') return;
-                if (e.key && e.key.toLowerCase() === 'l') {
-                    isLooping = !isLooping;
-                    updateLoopButtonUI();
-                    updateSourceLoopingFromRegion();
-                }
-            });
-
-            // --- 3. Procedural Generation (for defaults) ---
-            function createProceduralBuffer() {
-                // Create a 2 second buffer of noise
-                const sampleRate = audioContext.sampleRate;
-                const frameCount = sampleRate * 2.0;
-                const buffer = audioContext.createBuffer(1, frameCount, sampleRate);
-                const data = buffer.getChannelData(0);
-                for (let i = 0; i < frameCount; i++) {
-                    data[i] = (Math.random() * 2 - 1) * Math.exp(-3 * i / frameCount);
-                }
-                currentBuffer = buffer;
-                resetRegion();
-                drawWaveform();
-            }
-
-            // --- 4. Waveform Drawing with Markers ---
-            function resetRegion() {
-                regionStart = 0.0;
-                regionEnd = 1.0;
-            }
-
-            function drawWaveform() {
-                if (!canvas) return;
-                const dpr = window.devicePixelRatio || 1;
-                const rect = canvas.getBoundingClientRect();
-                canvas.width = rect.width * dpr;
-                canvas.height = rect.height * dpr;
-                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-                const width = rect.width;
-                const height = rect.height;
-                const centerY = height / 2;
-
-                ctx.clearRect(0, 0, width, height);
-
-                if (!currentBuffer) return;
-
-                const data = currentBuffer.getChannelData(0);
-                const step = Math.ceil(data.length / width);
-                const amp = height / 2;
-
-                // Calculate pixel positions for region
-                const startX = Math.floor(regionStart * width);
-                const endX = Math.floor(regionEnd * width);
-
-                // --- Pass 1: Draw Dimmed Waveform (Full) ---
-                ctx.fillStyle = '#2a3a2a'; // Dark green/grey
-                for (let i = 0; i < width; i += 2) {
-                    let min = 1.0, max = -1.0;
-                    for (let j = 0; j < step; j++) {
-                        const datum = data[(i * step) + j] || 0;
-                        if (datum < min) min = datum;
-                        if (datum > max) max = datum;
-                    }
-                    const barHeight = (max - min) * amp;
-                    const y = centerY - (barHeight / 2);
-                    ctx.fillRect(i, y, 1.5, barHeight);
-                }
-
-                // --- Pass 2: Draw Bright Waveform (Region) ---
-                ctx.fillStyle = '#4ade80'; // Bright Green
-                for (let i = startX; i < endX; i += 2) {
-                    let min = 1.0, max = -1.0;
-                    for (let j = 0; j < step; j++) {
-                        const datum = data[(i * step) + j] || 0;
-                        if (datum < min) min = datum;
-                        if (datum > max) max = datum;
-                    }
-                    const barHeight = (max - min) * amp;
-                    const y = centerY - (barHeight / 2);
-                    ctx.fillRect(i, y, 1.5, barHeight);
-                }
-
-                // --- Pass 3: Draw Markers ---
-                ctx.fillStyle = '#fff';
-                
-                // Start Handle
-                ctx.beginPath();
-                ctx.moveTo(startX, 0);
-                ctx.lineTo(startX - 6, 8);
-                ctx.lineTo(startX + 6, 8);
-                ctx.fill();
-                ctx.fillRect(startX - 1, 8, 2, height - 16);
-
-                // End Handle
-                ctx.beginPath();
-                ctx.moveTo(endX, height);
-                ctx.lineTo(endX - 6, height - 8);
-                ctx.lineTo(endX + 6, height - 8);
-                ctx.fill();
-                ctx.fillRect(endX - 1, 8, 2, height - 16);
-            }
-
-            // --- 5. Marker Interaction (Drag Logic) ---
-            const handleHit = (x) => {
-                const width = canvas.width / (window.devicePixelRatio || 1);
-                const startX = regionStart * width;
-                const endX = regionEnd * width;
-                const threshold = 10; // pixels
-
-                if (Math.abs(x - startX) < threshold) return 'start';
-                if (Math.abs(x - endX) < threshold) return 'end';
-                return null;
-            };
-
-            canvas.addEventListener('mousedown', (e) => {
-                const rect = canvas.getBoundingClientRect();
-                const x = e.clientX - rect.left;
-                const hit = handleHit(x);
-                
-                if (hit === 'start') isDraggingStart = true;
-                if (hit === 'end') isDraggingEnd = true;
-            });
-
-            window.addEventListener('mousemove', (e) => {
-                if (!isDraggingStart && !isDraggingEnd) {
-                    // Hover cursor logic
-                    const rect = canvas.getBoundingClientRect();
-                    const x = e.clientX - rect.left;
-                    const hit = handleHit(x);
-                    canvas.style.cursor = hit ? 'ew-resize' : 'default';
-                    return;
-                }
-
-                const rect = canvas.getBoundingClientRect();
-                const x = e.clientX - rect.left;
-                const width = rect.width;
-                let percent = Math.max(0, Math.min(1, x / width));
-
-                if (isDraggingStart) {
-                    regionStart = Math.min(percent, regionEnd - 0.01); // Prevent crossing
-                    drawWaveform();
-                    updateSourceLoopingFromRegion();
-                } else if (isDraggingEnd) {
-                    regionEnd = Math.max(percent, regionStart + 0.01);
-                    drawWaveform();
-                    updateSourceLoopingFromRegion();
-                }
-            });
-
-            window.addEventListener('mouseup', () => {
-                isDraggingStart = false;
-                isDraggingEnd = false;
-            });
-
-            // --- 6. List Interactions ---
-            document.querySelectorAll('#sampleList li').forEach((item, index) => {
-                item.addEventListener('click', () => {
-                    document.querySelectorAll('#sampleList li').forEach(i => i.classList.remove('active'));
-                    item.classList.add('active');
-                    
-                    // Reset buffer for default items
-                    if (item.dataset.type === 'default') {
-                        currentBuffer = null; // Will generate on play
-                        resetRegion();
-                        // Draw a dummy waveform for visuals
-                        drawWaveform(); 
-                    }
-                });
-            });
-
-            // Resize handler
-            window.addEventListener('resize', drawWaveform);
-        });
-    </script>
 </body>
 </html>
