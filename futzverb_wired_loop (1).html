@@ -811,7 +811,7 @@
                     </div>
                 </div>
                 <div class="btn-row">
-                    <button class="btn active">Kill</button>
+                    <button class="btn">Kill</button>
                     <button class="btn btn-blue active">Freeze</button>
                 </div>
             </div>
@@ -1046,7 +1046,7 @@
             let isMasterBypassed = false;
             const moduleModeState = {
                 distortion: 'fuzz',
-                preverb: 'kill',
+                preverb: 'freeze',
                 delay: 'digital',
                 reverb: 'plate',
                 dynamics: 'comp'
@@ -1864,6 +1864,10 @@
                 let seconds = clamp(0.35 + sizeNorm * 1.1 + decayNorm * 7.0, 0.35, 10.0);
                 let diffusion = diffNorm;
 
+                if (preverbMode === 'kill') {
+                    seconds = clamp(seconds * 0.58, 0.25, 5.0);
+                    diffusion = clamp(diffusion * 0.72, 0, 1);
+                }
                 if (preverbMode === 'freeze') {
                     seconds = 12.0;
                     diffusion = 0.98;
@@ -1943,11 +1947,15 @@
                         // predelay 0..60ms
                         n.preDelay.delayTime.setTargetAtTime(norm * 0.06, t, 0.01);
 
-                        // Wet/dry derived from size (bigger room => more wet)
+                        // Wet/dry derived from size + pre-verb mode
+                        const preverbMode = moduleModeState.preverb;
                         let wet = clamp(0.10 + norm * 0.75, 0.10, 0.90);
                         let dry = clamp(1.0 - wet * 0.65, 0.15, 1.0);
-                        if (moduleModeState.preverb === 'kill') { wet = 0.0; dry = 1.0; }
-                        if (moduleModeState.preverb === 'freeze') { wet = Math.max(wet, 0.92); dry = Math.min(dry, 0.22); }
+                        if (preverbMode === 'kill') {
+                            wet = clamp(wet * 0.45, 0.08, 0.42);
+                            dry = clamp(1.0 - wet * 0.35, 0.65, 1.0);
+                        }
+                        if (preverbMode === 'freeze') { wet = Math.max(wet, 0.92); dry = Math.min(dry, 0.22); }
                         n.wetGain.gain.setTargetAtTime(wet, t, 0.02);
                         n.dryGain.gain.setTargetAtTime(dry, t, 0.02);
 
@@ -2068,7 +2076,7 @@
                 const n = fx.nodes;
 
                 const preverbMode = moduleModeState.preverb;
-                n.preVerbSendGain.gain.setTargetAtTime(preverbMode === 'kill' ? 0 : (preverbMode === 'freeze' ? 1.25 : 1), t, 0.02);
+                n.preVerbSendGain.gain.setTargetAtTime(preverbMode === 'kill' ? 0.42 : (preverbMode === 'freeze' ? 1.25 : 1), t, 0.02);
                 n.modDepth.gain.setTargetAtTime(preverbMode === 'freeze' ? Math.max(n.modDepth.gain.value, 0.004) : n.modDepth.gain.value, t, 0.02);
 
                 const tape = moduleModeState.delay === 'tape';
@@ -2620,6 +2628,7 @@
                     // module states
                     const distEnabled = getModuleEnabled('Distortion');
                     const preVerbEnabled = getModuleEnabled('Pre-Verb');
+                    const preverbMode = moduleModeState.preverb;
                     const delayEnabled = getModuleEnabled('Delay');
                     const reverbEnabled = getModuleEnabled('Reverb');
                     const dynamicsEnabled = getModuleEnabled('Dynamics');
@@ -2664,18 +2673,29 @@
                     delayWet.gain.setValueAtTime(delayEnabled ? clamp(dMix / 100, 0, 1) * 0.8 : 0, t0);
 
                     const sizeNorm = clamp(size / 100, 0, 1);
-                    preDelay.delayTime.setValueAtTime(preVerbEnabled ? sizeNorm * 0.06 : 0, t0);
+                    const preVerbOn = preVerbEnabled ? 1 : 0;
+                    const preDelaySeconds = preverbMode === 'freeze' ? 0.045 : (preverbMode === 'kill' ? 0.012 : sizeNorm * 0.06);
+                    preDelay.delayTime.setValueAtTime(preVerbOn ? preDelaySeconds : 0, t0);
 
-                    const modNorm = preVerbEnabled ? clamp(mod / 100, 0, 1) : 0;
+                    const modNorm = preVerbOn ? clamp(mod / 100, 0, 1) : 0;
                     lfo.frequency.setValueAtTime(0.2 + modNorm * 2.0, t0);
                     lfoGain.gain.setValueAtTime(1.0, t0);
-                    modDepth.gain.setValueAtTime(modNorm * 0.008, t0);
+                    const modDepthSeconds = preverbMode === 'freeze' ? Math.max(modNorm * 0.008, 0.004) : modNorm * 0.008;
+                    modDepth.gain.setValueAtTime(modDepthSeconds, t0);
                     modDelay.delayTime.setValueAtTime(0.010, t0);
-                    modBypass.gain.setValueAtTime(preVerbEnabled ? 0 : 1, t0);
+                    modBypass.gain.setValueAtTime(preVerbOn ? 0 : 1, t0);
                     lfo.start(0);
 
-                    const wet = clamp(0.10 + sizeNorm * 0.75, 0.10, 0.90);
-                    const dry = clamp(1.0 - wet * 0.65, 0.15, 1.0);
+                    let wet = clamp(0.10 + sizeNorm * 0.75, 0.10, 0.90);
+                    let dry = clamp(1.0 - wet * 0.65, 0.15, 1.0);
+                    if (preverbMode === 'kill') {
+                        wet = clamp(wet * 0.45, 0.08, 0.42);
+                        dry = clamp(1.0 - wet * 0.35, 0.65, 1.0);
+                    }
+                    if (preverbMode === 'freeze') {
+                        wet = Math.max(wet, 0.92);
+                        dry = Math.min(dry, 0.22);
+                    }
                     dryGain.gain.setValueAtTime(dry, t0);
                     wetGain.gain.setValueAtTime(reverbEnabled ? wet : 0, t0);
 
