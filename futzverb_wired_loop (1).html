@@ -949,7 +949,7 @@
                                 <button class="sb-import-btn" data-role="import">IMPORT</button>
                                 <button class="sb-export-btn" data-role="export">EXPORT</button>
                                 <button class="sb-mute-btn" data-role="mute">Mute A</button>
-                                <label class="sb-volume">VOL <input type="range" data-role="deck-volume" min="0" max="100" value="100" /><span class="sb-volume-value" data-role="deck-volume-value">100</span></label>
+                                <label class="sb-volume">Volume A <input type="range" data-role="deck-volume" min="0" max="100" value="80" /><span class="sb-volume-value" data-role="deck-volume-value">80</span></label>
                             </div>
                         </div>
                         <ul class="sb-list" data-role="sample-list">
@@ -981,7 +981,7 @@
                                 <button class="sb-import-btn" data-role="import">IMPORT</button>
                                 <button class="sb-export-btn" data-role="export">EXPORT</button>
                                 <button class="sb-mute-btn" data-role="mute">Mute B</button>
-                                <label class="sb-volume">VOL <input type="range" data-role="deck-volume" min="0" max="100" value="100" /><span class="sb-volume-value" data-role="deck-volume-value">100</span></label>
+                                <label class="sb-volume">Volume B <input type="range" data-role="deck-volume" min="0" max="100" value="80" /><span class="sb-volume-value" data-role="deck-volume-value">80</span></label>
                             </div>
                         </div>
                         <ul class="sb-list" data-role="sample-list">
@@ -2228,7 +2228,7 @@
                     volumeValue,
                     currentBuffer: null,
                     sampleGain: null,
-                    level: 1.0,
+                    level: 0.8,
                     muted: false,
                     sourceNode: null,
                     activeMidiVoices: new Map(),
@@ -2611,8 +2611,11 @@
 
                     const sourceNode = offline.createBufferSource();
                     sourceNode.buffer = slicedBuffer;
-                    sourceNode.connect(distIn);
-                    sourceNode.connect(distBypass);
+                    const deckOutGain = offline.createGain();
+                    deckOutGain.gain.setValueAtTime(getDeckOutputGain(), t0);
+                    sourceNode.connect(deckOutGain);
+                    deckOutGain.connect(distIn);
+                    deckOutGain.connect(distBypass);
 
                     // module states
                     const distEnabled = getModuleEnabled('Distortion');
@@ -2784,7 +2787,7 @@
                 deck.volumeSlider?.addEventListener('input', (e) => {
                     updateDeckVolume(e.target.value);
                 });
-                updateDeckVolume(deck.volumeSlider?.value ?? 100);
+                updateDeckVolume(deck.volumeSlider?.value ?? 80);
                 updateDeckMuteUI();
 
                 deck.sampleList?.querySelectorAll('li').forEach((item) => {
